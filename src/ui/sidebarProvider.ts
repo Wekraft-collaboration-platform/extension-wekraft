@@ -99,7 +99,9 @@ export class GitPilotSidebarProvider implements vscode.WebviewViewProvider {
 
   private async fetchAPI(path: string) {
     const session = await vscode.authentication.getSession("github", ["read:user", "repo"], { createIfNone: false });
-    if (!session) { return null; }
+    if (!session) { 
+      return null; 
+    }
     
     try {
       const response = await fetch(`https://api.github.com${path}`, {
@@ -109,8 +111,13 @@ export class GitPilotSidebarProvider implements vscode.WebviewViewProvider {
           "User-Agent": "GitPilot-VSCode-Extension"
         }
       });
-      return response.json();
+      if (!response.ok) {
+        console.error(`GitHub API error: ${response.status} ${response.statusText}`);
+        return null;
+      }
+      return await response.json();
     } catch (e) {
+      console.error("GitPilot API fetch failed:", e);
       return null;
     }
   }
@@ -119,6 +126,11 @@ export class GitPilotSidebarProvider implements vscode.WebviewViewProvider {
     this.view?.webview.postMessage({ type: "setLoading", loading: true });
     try {
       const data = await this.fetchAPI("/user/repos?sort=updated&per_page=20");
+      if (data === null) {
+        vscode.window.showErrorMessage("Failed to fetch repos. Check your GitHub connection.");
+        this.view?.webview.postMessage({ type: "setLoading", loading: false });
+        return;
+      }
       const repos = Array.isArray(data) ? data : [];
       const reposWithDeadlines = repos.map(repo => {
         return {
@@ -156,6 +168,7 @@ export class GitPilotSidebarProvider implements vscode.WebviewViewProvider {
         deadline
       });
     } catch (e) {
+      console.error("Failed to fetch repo details:", e);
       vscode.window.showErrorMessage("Failed to fetch repo details.");
     }
     this.view?.webview.postMessage({ type: "setLoading", loading: false });
@@ -170,18 +183,21 @@ export class GitPilotSidebarProvider implements vscode.WebviewViewProvider {
           type: "renderCommitDetail",
           commit: {
             sha: commit.sha,
-            message: commit.commit.message,
-            author: commit.commit.author.name,
-            email: commit.commit.author.email,
-            date: commit.commit.author.date,
+            message: commit.commit.message || "(no message)",
+            author: commit.commit.author.name || "Unknown",
+            email: commit.commit.author.email || "",
+            date: commit.commit.author.date || new Date().toISOString(),
             additions: commit.stats?.additions || 0,
             deletions: commit.stats?.deletions || 0,
             filesChanged: commit.files?.length || 0,
             files: (commit.files || []).slice(0, 20)
           }
         });
+      } else {
+        vscode.window.showErrorMessage("Failed to load commit details.");
       }
     } catch (e) {
+      console.error("Failed to fetch commit details:", e);
       vscode.window.showErrorMessage("Failed to fetch commit details.");
     }
     this.view?.webview.postMessage({ type: "setLoading", loading: false });
@@ -421,7 +437,7 @@ export class GitPilotSidebarProvider implements vscode.WebviewViewProvider {
               const days = Math.floor(diff / (1000 * 60 * 60 * 24));
               const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
               if (days > 0) {
-                dlText = \`< \${days + 1} day\${days > 0 ? 's' : ''}\`;
+                dlText = \`< \${days} day\${days !== 1 ? 's' : ''}\`;
               } else {
                 dlText = \`< \${hours + 1} hr\${hours > 0 ? 's' : ''}\`;
               }
@@ -464,12 +480,20 @@ export class GitPilotSidebarProvider implements vscode.WebviewViewProvider {
             const dateStr = new Date(c.commit.author.date).toLocaleDateString();
             const msgLine = c.commit.message.split('\\n')[0];
             return \`
-              <div class="commit" onclick="vscode.postMessage({ type: 'viewCommit', repoFullName: '\${currentRepo}', sha: '\${c.sha}' }); showView('view-commit');">
+              <div class="commit" data-commit-sha="\${c.sha}">
                 <div class="commit-msg">\${msgLine}</div>
                 <div class="commit-meta">\${dateStr} &bull; \${c.commit.author.name}</div>
               </div>
             \`;
           }).join('');
+          // Attach event listeners to commit elements
+          document.querySelectorAll('.commit').forEach(el => {
+            el.addEventListener('click', () => {
+              const sha = el.dataset.commitSha;
+              vscode.postMessage({ type: 'viewCommit', repoFullName: currentRepo, sha: sha });
+              showView('view-commit');
+            });
+          });
         }
       }
 
