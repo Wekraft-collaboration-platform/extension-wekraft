@@ -3,10 +3,9 @@
   "displayName": "GitPilot",
   "description": "AI-native platform for teaming up and shipping projects. GitHub-integrated push intelligence, project deadlines, and commit history tracking in your IDE.",
   "version": "0.1.0",
-  "publisher": "gitpilot",
+  "publisher": "Bhanupartap",
   "author": "bhanu",
   "license": "MIT",
-  "icon": "media/gitpilot.svg",
   "galleryBanner": {
     "color": "#0c1119",
     "theme": "dark"
@@ -31,7 +30,7 @@
     "commit-history"
   ],
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
     "Other",
