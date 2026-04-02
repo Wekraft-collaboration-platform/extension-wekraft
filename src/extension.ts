@@ -9,8 +9,19 @@ import { GitPilotSidebarProvider } from "./ui/sidebarProvider";
 
 let sidebarProvider: GitPilotSidebarProvider | undefined;
 
+// Detect if running in Cursor editor
+const isRunningInCursor = (): boolean => {
+  const appName = vscode.env.appName || "";
+  return appName.toLowerCase().includes("cursor");
+};
+
 export function activate(context: vscode.ExtensionContext): void {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const inCursor = isRunningInCursor();
+  
+  if (inCursor) {
+    console.log("GitPilot: Running in Cursor editor. AI-enhanced features enabled.");
+  }
 
   sidebarProvider = new GitPilotSidebarProvider(context.extensionUri, context);
   context.subscriptions.push(

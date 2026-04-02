@@ -1,6 +1,11 @@
-# GitPilot - Wekraft for VS Code
+# GitPilot - Wekraft for VS Code & Cursor
 
-GitPilot is an **AI-native VS Code extension** that brings intelligent project collaboration and shipping velocity to your workspace. Authenticate with GitHub, track repositories, set project deadlines, and monitor commit history—all without leaving your editor.
+GitPilot is an **AI-native code editor extension** that brings intelligent project collaboration and shipping velocity to your workspace. Works seamlessly on **VS Code** and **Cursor** (the AI code editor). Authenticate with GitHub, track repositories, set project deadlines, and monitor commit history—all without leaving your editor.
+
+## Supported Editors
+
+✅ **VS Code** - Download from [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Bhanupartap.gitpilot-bhanu)  
+✅ **Cursor** - Install from VS Code Marketplace within Cursor ([See Cursor Guide](./CURSOR_GUIDE.md))
 
 ## Features
 
