@@ -1,8 +1,8 @@
 {
   "name": "gitpilot-bhanu",
   "displayName": "GitPilot: Push Intelligence",
-  "description": "AI-native platform for teaming up and shipping projects. GitHub-integrated push intelligence, project deadlines, and commit history tracking in your IDE.",
-  "version": "0.1.1",
+  "description": "AI-native platform for teaming up and shipping projects. GitHub-integrated push intelligence, project deadlines, and commit history tracking in your IDE. Works with VS Code and Cursor.",
+  "version": "0.1.2",
   "publisher": "Bhanupartap",
   "author": "bhanu",
   "license": "MIT",
