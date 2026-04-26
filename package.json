@@ -1,9 +1,10 @@
 {
   "name": "gitpilot-bhanu",
   "displayName": "GitPilot: Push Intelligence",
+  "icon": "media/logo.svg",
   "description": "AI-native platform for teaming up and shipping projects. GitHub-integrated push intelligence, project deadlines, and commit history tracking in your IDE. Works with VS Code and Cursor.",
-  "version": "0.1.2",
-  "publisher": "Bhanupartap",
+  "version": "0.2.0",
+  "publisher": "bhanupartap",
   "author": "bhanu",
   "license": "MIT",
   "galleryBanner": {
@@ -57,6 +58,10 @@
       {
         "command": "gitpilot.refreshSidebar",
         "title": "GitPilot: Refresh Sidebar"
+      },
+      {
+        "command": "gitpilot.syncNow",
+        "title": "GitPilot: Sync Now"
       }
     ],
     "viewsContainers": {
@@ -64,7 +69,7 @@
         {
           "id": "gitpilot",
           "title": "GitPilot",
-          "icon": "media/gitpilot.svg"
+          "icon": "media/activity-icon.svg"
         }
       ]
     },
@@ -74,7 +79,8 @@
           "id": "gitpilot.sidebar",
           "name": "Mission Control",
           "type": "webview",
-          "icon": "media/gitpilot.svg"
+          "icon": "media/activity-icon.svg",
+          "visibility": "visible"
         }
       ]
     }
@@ -83,11 +89,19 @@
     "vscode:prepublish": "npm run build",
     "build": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "echo \"No lint configured yet\""
+    "watch:clean": "node --no-deprecation --no-warnings ./node_modules/typescript/bin/tsc -watch -p ./",
+    "debug:clean": "node --no-deprecation --no-warnings ./dist/extension.js",
+    "lint": "eslint src --ext ts",
+    "test": "node --test dist/**/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.14.2",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "convex": "^1.0.0",
+    "dotenv": "^16.6.1",
+    "uuid": "^9.0.0"
   }
 }

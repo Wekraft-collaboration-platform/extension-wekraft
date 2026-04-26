@@ -1,0 +1,7 @@
+{
+  "extensions.recommendations": [],
+  "extensions.ignoreRecommendations": true,
+  "[plaintext]": {
+    "editor.defaultFormatter": null
+  }
+}
