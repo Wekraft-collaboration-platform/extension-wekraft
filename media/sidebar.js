@@ -180,6 +180,21 @@ function loadAll() {
   post({ type: "FETCH_TEAM_MEMBERS", payload: { projectId: state.projectId } });
 }
 
+function loadAllSilent() {
+  if (!state.projectId || !state.auth?.isAuthenticated) { return; }
+  post({ type: "FETCH_SPRINTS", payload: { projectId: state.projectId } });
+  post({ type: "FETCH_TASKS", payload: { projectId: state.projectId, sprintId: state.sprintId || undefined } });
+  post({ type: "FETCH_ISSUES", payload: { projectId: state.projectId } });
+  post({ type: "FETCH_TEAM_MEMBERS", payload: { projectId: state.projectId } });
+}
+
+// Start active background silent polling to ensure real-time synchronization with the Convex database
+setInterval(() => {
+  if (state.auth && state.auth.isAuthenticated && state.projectId && !state.editing) {
+    loadAllSilent();
+  }
+}, 4000);
+
 selectProject.addEventListener("change", () => {
   state.projectId = selectProject.value;
   state.sprintId = "";
@@ -258,11 +273,34 @@ function onTaskDeleted(taskId) {
 
 function onIssueUpdated(issue) {
   state.issues = state.issues.map((i) => (i.id === issue.id ? issue : i));
+
+  // If this issue has a linked task, dynamically update its blocked status in real-time on the client side
+  if (issue.taskId) {
+    const isClosed = issue.status === "closed";
+    state.tasks = state.tasks.map((t) => {
+      if (t.id === issue.taskId) {
+        return { ...t, isBlocked: !isClosed };
+      }
+      return t;
+    });
+  }
+
   renderItems();
   closeEditPanel();
 }
 
 function onIssueDeleted(issueId) {
+  // If this issue has a linked task, unblock it in the UI when the issue is deleted
+  const issue = state.issues.find((i) => i.id === issueId);
+  if (issue && issue.taskId) {
+    state.tasks = state.tasks.map((t) => {
+      if (t.id === issue.taskId) {
+        return { ...t, isBlocked: false };
+      }
+      return t;
+    });
+  }
+
   state.issues = state.issues.filter((i) => i.id !== issueId);
   renderItems();
 }
