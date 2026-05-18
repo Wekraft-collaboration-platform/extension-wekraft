@@ -28,8 +28,8 @@ import { AuthState, WekraftUser, HandshakeExchangeResult } from "../types";
 // ─────────────────────────────────────────────────────────────
 
 const SECRET_API_KEY = "wekraft.apiKey";
-const GLOBAL_USER_ID  = "wekraft.userId";
-const GLOBAL_USER     = "wekraft.user";
+const GLOBAL_USER_ID = "wekraft.userId";
+const GLOBAL_USER = "wekraft.user";
 
 export class AuthManager {
   private _apiKey: string | null = null;
@@ -40,7 +40,7 @@ export class AuthManager {
     new vscode.EventEmitter<AuthState>();
   public readonly onAuthStateChanged = this._onAuthStateChanged.event;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext) { }
 
   // ── Restore session on activation ────────────────────────
 
@@ -205,7 +205,7 @@ export class AuthManager {
   ): Promise<void> {
     this._apiKey = result.apiKey;
     this._userId = result.userId;
-    
+
     if (result.user) {
       this._user = {
         id: result.userId,

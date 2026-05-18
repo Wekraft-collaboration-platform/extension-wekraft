@@ -41,6 +41,8 @@ export interface Project {
   description?: string;
   status: "active" | "archived";
   createdAt: number;
+  ownerId?: string;
+  repoFullName?: string;
 }
 
 // ── Sprints ───────────────────────────────────────────────────
@@ -174,28 +176,30 @@ export type WebviewToExtensionMessage =
   | { type: "LOGOUT_REQUEST" }
   | { type: "REFRESH" }
   | { type: "FETCH_PROJECTS" }
-  | { type: "FETCH_SPRINTS";      payload: { projectId: string } }
-  | { type: "FETCH_TASKS";        payload: { projectId: string; sprintId?: string } }
-  | { type: "FETCH_ISSUES";       payload: { projectId: string } }
+  | { type: "FETCH_SPRINTS"; payload: { projectId: string } }
+  | { type: "FETCH_TASKS"; payload: { projectId: string; sprintId?: string } }
+  | { type: "FETCH_ISSUES"; payload: { projectId: string } }
   | { type: "FETCH_TEAM_MEMBERS"; payload: { projectId: string } }
-  | { type: "CREATE_TASK";        payload: CreateTaskInput }
-  | { type: "UPDATE_TASK";        payload: UpdateTaskInput }
-  | { type: "DELETE_TASK";        payload: { taskId: string } }
-  | { type: "UPDATE_ISSUE";       payload: UpdateIssueInput }
-  | { type: "DELETE_ISSUE";       payload: { issueId: string } };
+  | { type: "CREATE_TASK"; payload: CreateTaskInput }
+  | { type: "UPDATE_TASK"; payload: UpdateTaskInput }
+  | { type: "DELETE_TASK"; payload: { taskId: string } }
+  | { type: "UPDATE_ISSUE"; payload: UpdateIssueInput }
+  | { type: "FETCH_REPO_STRUCTURE"; payload: { repoFullName?: string } }
+  | { type: "DELETE_ISSUE"; payload: { issueId: string } };
 
 export type ExtensionToWebviewMessage =
-  | { type: "AUTH_STATE";          payload: AuthState }
-  | { type: "PROJECTS_LOADED";     payload: Project[] }
-  | { type: "SPRINTS_LOADED";      payload: Sprint[] }
-  | { type: "TASKS_LOADED";        payload: Task[] }
-  | { type: "ISSUES_LOADED";       payload: Issue[] }
+  | { type: "AUTH_STATE"; payload: AuthState }
+  | { type: "PROJECTS_LOADED"; payload: Project[] }
+  | { type: "SPRINTS_LOADED"; payload: Sprint[] }
+  | { type: "TASKS_LOADED"; payload: Task[] }
+  | { type: "ISSUES_LOADED"; payload: Issue[] }
   | { type: "TEAM_MEMBERS_LOADED"; payload: TeamMember[] }
-  | { type: "TASK_CREATED";        payload: Task }
-  | { type: "TASK_UPDATED";        payload: Task }
-  | { type: "TASK_DELETED";        payload: { taskId: string } }
-  | { type: "ISSUE_UPDATED";       payload: Issue }
-  | { type: "ISSUE_DELETED";       payload: { issueId: string } }
-  | { type: "ERROR";               payload: { message: string } }
-  | { type: "LOADING";             payload: { isLoading: boolean } }
+  | { type: "TASK_CREATED"; payload: Task }
+  | { type: "TASK_UPDATED"; payload: Task }
+  | { type: "TASK_DELETED"; payload: { taskId: string } }
+  | { type: "ISSUE_UPDATED"; payload: Issue }
+  | { type: "ISSUE_DELETED"; payload: { issueId: string } }
+  | { type: "ERROR"; payload: { message: string } }
+  | { type: "LOADING"; payload: { isLoading: boolean } }
+  | { type: "WORKSPACE_FILES"; payload: any[] }
   | { type: "REFRESH" };

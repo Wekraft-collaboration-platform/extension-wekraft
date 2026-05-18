@@ -19,6 +19,8 @@ const state = {
   /** @type {any[]} */
   tasks: [],
   /** @type {any[]} */
+  projects: [],
+  /** @type {any[]} */
   issues: [],
   /** @type {any[]} */
   teamMembers: [],
@@ -58,6 +60,9 @@ const btnNewItem = $("btn-new-item");
 const itemList = $("item-list");
 
 const editPanel = $("edit-panel");
+const repoSearch = $("repo-search");
+const repoTree = $("repo-tree");
+let rawWorkspaceFiles = [];
 const editPanelTitle = $("edit-panel-title");
 const editTitle = /** @type {HTMLInputElement} */ ($("edit-title"));
 const editStatus = /** @type {HTMLSelectElement} */ ($("edit-status"));
@@ -82,6 +87,10 @@ window.addEventListener("message", ({ data: msg }) => {
     case "ISSUE_UPDATED": onIssueUpdated(msg.payload); break;
     case "ISSUE_DELETED": onIssueDeleted(msg.payload.issueId); break;
     case "LOADING": if (msg.payload.isLoading) showScreen("loading"); break;
+    case "WORKSPACE_FILES":
+      rawWorkspaceFiles = msg.payload;
+      renderRepoTree(rawWorkspaceFiles, repoTree);
+      break;
     case "ERROR": showError(msg.payload.message); break;
     case "REFRESH": loadAll(); break;
   }
@@ -96,11 +105,11 @@ function onAuthState(auth) {
   const u = auth.user;
   if (u) {
     userName.textContent = u.name || "Member";
-    
+
     const plan = (u.accountType || "free").toLowerCase();
     userRole.textContent = plan.toUpperCase() + " PLAN";
     userRole.className = `user-role plan-badge plan-${plan}`;
-    
+
     if (u.avatarUrl) {
       userAvatar.innerHTML = `<img src="${esc(u.avatarUrl)}" alt="Avatar" class="mini-avatar-img" style="width:32px; height:32px; border-radius:50%;" />`;
     } else {
@@ -114,6 +123,7 @@ function onAuthState(auth) {
 // ── Project / Sprint ──────────────────────────────────────────
 
 function onProjectsLoaded(projects) {
+  state.projects = projects;
   selectProject.innerHTML = "";
   if (!projects.length) {
     selectProject.innerHTML = '<option value="">No projects</option>';
@@ -362,11 +372,11 @@ function openEditPanel(type, id) {
 
   // Task-specific fields
   const isTask = type === "task";
-  const taskDates    = $("task-dates");
-  const taskTypeRow  = $("task-type-row");
-  const taskLinkRow  = $("task-link-row");
-  const taskBlocked  = $("task-blocked-row");
-  if (taskDates)   taskDates.style.display   = isTask ? "" : "none";
+  const taskDates = $("task-dates");
+  const taskTypeRow = $("task-type-row");
+  const taskLinkRow = $("task-link-row");
+  const taskBlocked = $("task-blocked-row");
+  if (taskDates) taskDates.style.display = isTask ? "" : "none";
   if (taskTypeRow) taskTypeRow.style.display = isTask ? "" : "none";
   if (taskLinkRow) taskLinkRow.style.display = isTask ? "" : "none";
   if (taskBlocked) taskBlocked.style.display = isTask ? "" : "none";
@@ -374,7 +384,7 @@ function openEditPanel(type, id) {
   if (isTask) {
     // Estimation dates
     const startEl = $("edit-start-date");
-    const endEl   = $("edit-end-date");
+    const endEl = $("edit-end-date");
     const todayStr = new Date().toISOString().split("T")[0];
 
     if (startEl) {
@@ -413,9 +423,8 @@ function openEditPanel(type, id) {
 
     // Type tag
     const typeLbl = $("edit-type-label");
-    const typeClr = $("edit-type-color");
     if (typeLbl) typeLbl.value = item?.type?.label ?? "";
-    if (typeClr) typeClr.value = item?.type?.color ?? "#6366f1";
+    selectTagColor(item?.type?.color ?? "#2563eb");
 
     // Link with codebase
     const linkEl = $("edit-link-codebase");
@@ -423,6 +432,13 @@ function openEditPanel(type, id) {
   }
 
   buildAvatarAssigneeSelect(item?.assigneeId);
+
+  // Clear repository search query and refresh structure highlights
+  if (repoSearch) { repoSearch.value = ""; }
+  
+  const activeProj = state.projects.find((p) => p.id === state.projectId);
+  const repoFullName = activeProj?.repoFullName || "";
+  post({ type: "FETCH_REPO_STRUCTURE", payload: { repoFullName } });
 
   editPanel.classList.remove("hidden");
   editTitle.focus();
@@ -435,6 +451,24 @@ function closeEditPanel() {
   btnSaveEdit.disabled = false;
 }
 
+function selectTagColor(colorHex) {
+  const hiddenInput = $("edit-type-color");
+  if (!hiddenInput) return;
+  hiddenInput.value = colorHex;
+
+  const dots = document.querySelectorAll(".tag-color-picker .color-dot");
+  dots.forEach((dot) => {
+    const dotColor = dot.getAttribute("data-color");
+    if (dotColor === colorHex) {
+      dot.classList.add("active");
+      dot.innerHTML = "✓";
+    } else {
+      dot.classList.remove("active");
+      dot.innerHTML = "";
+    }
+  });
+}
+
 function saveEdit() {
   if (!state.editing) { return; }
   const { type, id } = state.editing;
@@ -444,24 +478,24 @@ function saveEdit() {
     return;
   }
 
-  const descEl    = $("edit-description");
+  const descEl = $("edit-description");
   const assigneeEl = $("edit-assignee");
 
   const payload = {
-    title:      editTitle.value.trim(),
+    title: editTitle.value.trim(),
     description: descEl?.value?.trim() || undefined,
-    status:     editStatus.value || undefined,
-    priority:   editPriority.value || undefined,
+    status: editStatus.value || undefined,
+    priority: editPriority.value || undefined,
     assigneeId: assigneeEl?.value || undefined,
   };
 
   if (type === "task") {
     // Collect task-specific rich fields
-    const startEl   = $("edit-start-date");
-    const endEl     = $("edit-end-date");
-    const typeLbl   = $("edit-type-label");
-    const typeClr   = $("edit-type-color");
-    const linkEl    = $("edit-link-codebase");
+    const startEl = $("edit-start-date");
+    const endEl = $("edit-end-date");
+    const typeLbl = $("edit-type-label");
+    const typeClr = $("edit-type-color");
+    const linkEl = $("edit-link-codebase");
     const blockedEl = $("edit-is-blocked");
 
     if (startEl?.value && endEl?.value) {
@@ -482,14 +516,14 @@ function saveEdit() {
 
       payload.estimation = {
         startDate: startT,
-        endDate:   endT,
+        endDate: endT,
       };
     }
 
     const tagLabel = typeLbl?.value?.trim();
     payload.type = tagLabel ? { label: tagLabel, color: typeClr?.value ?? "#6366f1" } : null;
     payload.linkWithCodebase = linkEl?.value?.trim() || null;
-    
+
     // Preserve existing blocked state if element is removed from UI
     const item = id ? state.tasks.find((t) => t.id === id) : null;
     payload.isBlocked = blockedEl ? blockedEl.checked : (item?.isBlocked ?? false);
@@ -520,28 +554,28 @@ function saveEdit() {
 // ── Rich Avatar Assignee Dropdown ──────────────────────────────
 
 function buildAvatarAssigneeSelect(selectedId = "") {
-  const hiddenInput   = $("edit-assignee");
-  const namePreview   = $("assignee-name-preview");
+  const hiddenInput = $("edit-assignee");
+  const namePreview = $("assignee-name-preview");
   const avatarPreview = $("assignee-avatar-preview");
-  const dropdown      = $("assignee-dropdown");
-  const displayBtn    = $("assignee-selected");
+  const dropdown = $("assignee-dropdown");
+  const displayBtn = $("assignee-selected");
   if (!hiddenInput || !dropdown || !displayBtn) { return; }
 
   const myMember = state.teamMembers.find((m) => m.userId === state.auth.user?.id);
-  const isAdmin  = myMember && (myMember.role === "admin" || myMember.role === "owner");
+  const isAdmin = myMember && (myMember.role === "admin" || myMember.role === "owner");
 
   const allOptions = [
     { userId: "", name: "Unassigned", avatarUrl: null },
     ...state.teamMembers.map((m) => ({
-      userId:    m.userId,
-      name:      m.user?.name ?? m.userId,
+      userId: m.userId,
+      name: m.user?.name ?? m.userId,
       avatarUrl: m.user?.avatarUrl ?? null,
     }))
   ];
 
   const renderAvatar = (av, nm) => av
     ? `<img src="${esc(av)}" class="mini-avatar-img" style="width:18px;height:18px;border-radius:50%;"/>`
-    : `<span class="mini-avatar" style="width:18px;height:18px;font-size:9px;flex-shrink:0;">${esc((nm||"?")[0].toUpperCase())}</span>`;
+    : `<span class="mini-avatar" style="width:18px;height:18px;font-size:9px;flex-shrink:0;">${esc((nm || "?")[0].toUpperCase())}</span>`;
 
   const setSelected = (userId) => {
     hiddenInput.value = userId;
@@ -610,8 +644,8 @@ function renderStatusTabs() {
   if (!container) return;
 
   const statuses = state.activeView === "tasks"
-    ? [{val: "all", label: "All"}, {val: "not started", label: "Not Started"}, {val: "inprogress", label: "Inprogress"}, {val: "reviewing", label: "Reviewing"}, {val: "testing", label: "Testing"}, {val: "completed", label: "Completed"}]
-    : [{val: "all", label: "All"}, {val: "not opened", label: "Not Opened"}, {val: "opened", label: "Opened"}, {val: "reopened", label: "Reopened"}, {val: "closed", label: "Closed"}];
+    ? [{ val: "all", label: "All" }, { val: "not started", label: "Not Started" }, { val: "inprogress", label: "Inprogress" }, { val: "reviewing", label: "Reviewing" }, { val: "testing", label: "Testing" }, { val: "completed", label: "Completed" }]
+    : [{ val: "all", label: "All" }, { val: "not opened", label: "Not Opened" }, { val: "opened", label: "Opened" }, { val: "reopened", label: "Reopened" }, { val: "closed", label: "Closed" }];
 
   // If current activeStatus doesn't exist in new view, reset to "all"
   if (!statuses.find(s => s.val === state.activeStatus)) {
@@ -683,6 +717,35 @@ btnLogout.addEventListener("click", () => post({ type: "LOGOUT_REQUEST" }));
 btnSaveEdit.addEventListener("click", saveEdit);
 btnCloseEdit.addEventListener("click", closeEditPanel);
 
+const btnClearCodebase = $("btn-clear-codebase");
+const editLinkCodebase = $("edit-link-codebase");
+if (btnClearCodebase && editLinkCodebase) {
+  btnClearCodebase.addEventListener("click", () => {
+    editLinkCodebase.value = "";
+    const activeNodes = repoTree.querySelectorAll(".tree-node.active-file");
+    activeNodes.forEach((n) => n.classList.remove("active-file"));
+  });
+}// Toggle repository structure tree dropdown (exactly like SaaS popover dropdown)
+const repoStructureContainer = $("repo-structure-container");
+if (editLinkCodebase && repoStructureContainer) {
+  editLinkCodebase.addEventListener("click", (e) => {
+    e.stopPropagation();
+    repoStructureContainer.classList.toggle("hidden");
+  });
+  
+  // Prevent clicks inside the structure container from closing it
+  repoStructureContainer.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+}
+
+// Close the tree dropdown when clicking outside
+document.addEventListener("click", (e) => {
+  if (repoStructureContainer && !e.target.closest("#task-link-row")) {
+    repoStructureContainer.classList.add("hidden");
+  }
+});
+
 btnNewItem.addEventListener("click", () => {
   // Can only create tasks currently
   openEditPanel("task", null);
@@ -695,7 +758,7 @@ editTitle.addEventListener("keydown", (e) => {
 
 // Dynamic validation for start & end date fields
 const startEl = $("edit-start-date");
-const endEl   = $("edit-end-date");
+const endEl = $("edit-end-date");
 if (startEl && endEl) {
   startEl.addEventListener("change", () => {
     if (startEl.value) {
@@ -706,6 +769,133 @@ if (startEl && endEl) {
       if (endEl.value && endEl.value <= startEl.value) {
         endEl.value = nextDayStr;
       }
+    }
+  });
+}
+
+// Wire up color picker dots
+const colorPickerDots = document.querySelectorAll(".tag-color-picker .color-dot");
+colorPickerDots.forEach((dot) => {
+  dot.addEventListener("click", () => {
+    const color = dot.getAttribute("data-color");
+    if (color) {
+      selectTagColor(color);
+    }
+  });
+});
+
+// ── Repository Structure Tree Rendering ──────────────────────────
+
+function renderRepoTree(nodes, container, searchQuery = "") {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!nodes || nodes.length === 0) {
+    container.innerHTML = `<div class="empty-state" style="font-size: 11px;">No files found in repository.</div>`;
+    return;
+  }
+
+  const query = searchQuery.toLowerCase().trim();
+  const editLinkCodebase = $("edit-link-codebase");
+
+  function buildNodeHtml(node, depth = 0) {
+    const isDir = node.type === "directory";
+    
+    // If searching, check if node or any of its children match
+    if (query) {
+      if (isDir) {
+        const hasMatchingChild = checkHasMatchingChild(node, query);
+        if (!hasMatchingChild) return null;
+      } else {
+        if (!node.name.toLowerCase().includes(query) && !node.path.toLowerCase().includes(query)) {
+          return null;
+        }
+      }
+    }
+
+    const iconHtml = isDir
+      ? `<svg class="folder-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`
+      : `<svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+
+    const isActive = editLinkCodebase && editLinkCodebase.value === node.path;
+    const activeClass = isActive ? "active-file" : "";
+
+    const itemEl = document.createElement("div");
+    itemEl.className = `tree-node ${activeClass}`;
+    itemEl.dataset.path = node.path;
+    itemEl.dataset.type = node.type;
+    itemEl.innerHTML = `
+      <span class="tree-node-icon">${iconHtml}</span>
+      <span class="tree-node-label" title="${esc(node.name)}">${esc(node.name)}</span>
+    `;
+
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(itemEl);
+
+    if (isDir && node.children && node.children.length > 0) {
+      const childContainer = document.createElement("div");
+      childContainer.className = "tree-children";
+      
+      // Expand by default if searching, otherwise start collapsed
+      if (!query) {
+        childContainer.classList.add("collapsed");
+      }
+
+      node.children.forEach((child) => {
+        const childNode = buildNodeHtml(child, depth + 1);
+        if (childNode) {
+          childContainer.appendChild(childNode);
+        }
+      });
+
+      wrapper.appendChild(childContainer);
+
+      // Handle directory expand/collapse
+      itemEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        childContainer.classList.toggle("collapsed");
+      });
+    } else if (!isDir) {
+      // Handle file selection
+      itemEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        
+        // Remove active class from previous active nodes
+        const activeNodes = container.querySelectorAll(".tree-node.active-file");
+        activeNodes.forEach((n) => n.classList.remove("active-file"));
+        
+        // Mark this node active
+        itemEl.classList.add("active-file");
+        
+        // Update input field
+        if (editLinkCodebase) {
+          editLinkCodebase.value = node.path;
+        }
+
+        // Close dropdown
+        const dropdown = $("repo-structure-container");
+        if (dropdown) {
+          dropdown.classList.add("hidden");
+        }
+      });
+    }
+
+    return wrapper;
+  }
+
+  function checkHasMatchingChild(dirNode, q) {
+    if (dirNode.name.toLowerCase().includes(q) || dirNode.path.toLowerCase().includes(q)) {
+      return true;
+    }
+    if (dirNode.children) {
+      return dirNode.children.some((child) => checkHasMatchingChild(child, q));
+    }
+    return false;
+  }
+
+  nodes.forEach((node) => {
+    const nodeEl = buildNodeHtml(node);
+    if (nodeEl) {
+      container.appendChild(nodeEl);
     }
   });
 }

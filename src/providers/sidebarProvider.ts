@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
 import { AuthManager } from "../auth/authManager";
 import { ConvexClient } from "../api/convexClient";
 import {
@@ -26,7 +28,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly authManager: AuthManager,
     private readonly convexClient: ConvexClient
-  ) {}
+  ) { }
 
   // ── VS Code lifecycle ─────────────────────────────────────
 
@@ -72,6 +74,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       // Webview is ready — send current auth state immediately
       case "READY":
         this._post({ type: "AUTH_STATE", payload: this.authManager.getAuthState() });
+        this._sendWorkspaceFiles();
+        break;
+
+      case "FETCH_REPO_STRUCTURE":
+        await this._fetchRepoStructure(msg.payload.repoFullName);
         break;
 
       case "LOGIN_REQUEST":
@@ -363,21 +370,38 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       </div>
 
       <!-- Tag / Type (only for tasks) -->
-      <div id="task-type-row" class="form-row" style="align-items:center;">
-        <div class="field" style="flex:1;">
+      <div id="task-type-row" class="form-row" style="flex-direction: column; gap: 8px;">
+        <div class="field" style="width: 100%;">
           <label class="label">Tag Label</label>
           <input id="edit-type-label" class="input input-sm" type="text" placeholder="e.g. dashboard" maxlength="20" />
         </div>
-        <div class="field" style="width:48px;">
-          <label class="label">Color</label>
-          <input id="edit-type-color" class="input-color" type="color" value="#6366f1" />
+        <div class="field" style="width: 100%;">
+          <label class="label">Select Color</label>
+          <div class="tag-color-picker">
+            <span class="color-dot" data-color="#10b981" style="background-color: #10b981;"></span>
+            <span class="color-dot" data-color="#b45309" style="background-color: #b45309;"></span>
+            <span class="color-dot" data-color="#7c3aed" style="background-color: #7c3aed;"></span>
+            <span class="color-dot" data-color="#2563eb" style="background-color: #2563eb;"></span>
+            <span class="color-dot" data-color="#4b5563" style="background-color: #4b5563;"></span>
+          </div>
+          <input id="edit-type-color" type="hidden" value="#2563eb" />
         </div>
       </div>
 
       <!-- Link with Codebase (only for tasks) -->
-      <div id="task-link-row" class="field">
+      <div id="task-link-row" class="field" style="margin-top: 12px; position: relative;">
         <label class="label">Link with Codebase</label>
-        <input id="edit-link-codebase" class="input input-sm" type="text" placeholder="e.g. src/api/tasks.ts" />
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <input id="edit-link-codebase" class="input input-sm" type="text" placeholder="Select file from Repository Structure…" readonly style="flex: 1; background: var(--vscode-editor-inactiveSelectionBackground); cursor: pointer;" />
+          <button id="btn-clear-codebase" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 11px; height: 24px;" title="Clear codebase link">Clear</button>
+        </div>
+        
+        <div class="repo-structure-container hidden" id="repo-structure-container" style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
+          <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--vscode-descriptionForeground); margin-bottom: 4px;">Repository Structure</div>
+          <div id="repo-tree" style="font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; padding-right: 4px;">
+            <!-- Tree nodes loaded dynamically -->
+          </div>
+        </div>
       </div>
 
       <div class="form-actions">
@@ -395,6 +419,262 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private _post(msg: ExtensionToWebviewMessage): void {
     this._view?.webview.postMessage(msg);
+  }
+
+  private _sendWorkspaceFiles(): void {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+      this._post({ type: "WORKSPACE_FILES", payload: [] });
+      return;
+    }
+
+    const rootPath = workspaceFolders[0].uri.fsPath;
+    const fileTree = this._getWorkspaceFileTree(rootPath);
+    this._post({ type: "WORKSPACE_FILES", payload: fileTree });
+  }
+
+  private async _fetchRepoStructure(repoFullName?: string): Promise<void> {
+    try {
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      let localMatched = false;
+      let rootPath = "";
+
+      if (workspaceFolders && workspaceFolders.length > 0) {
+        rootPath = workspaceFolders[0].uri.fsPath;
+        if (repoFullName) {
+          const originUrl = this._getGitRemoteOrigin(rootPath);
+          if (originUrl) {
+            const remoteRepo = this._parseRepoFullName(originUrl);
+            if (remoteRepo && remoteRepo.toLowerCase() === repoFullName.toLowerCase()) {
+              localMatched = true;
+            }
+          }
+        } else {
+          localMatched = true;
+        }
+      }
+
+      if (localMatched && rootPath) {
+        const fileTree = this._getWorkspaceFileTree(rootPath);
+        this._post({ type: "WORKSPACE_FILES", payload: fileTree });
+        return;
+      }
+
+      if (repoFullName) {
+        let token: string | undefined;
+        try {
+          const session = await vscode.authentication.getSession("github", ["repo"], { silent: true });
+          token = session?.accessToken;
+        } catch (e) {}
+
+        const [owner, repoName] = repoFullName.split("/");
+        if (owner && repoName) {
+          let treeData = await this._getGitHubTree(owner, repoName, "main", token);
+          if (!treeData) {
+            treeData = await this._getGitHubTree(owner, repoName, "master", token);
+          }
+
+          if (treeData && Array.isArray(treeData)) {
+            const filtered = treeData.filter((item: any) => {
+              return !this._shouldSkipGitHubItem(item.path, item.type === "blob");
+            });
+            const parsedTree = this._buildTreeFromFlatList(filtered);
+            this._post({ type: "WORKSPACE_FILES", payload: parsedTree });
+            return;
+          }
+        }
+      }
+
+      if (rootPath) {
+        const fileTree = this._getWorkspaceFileTree(rootPath);
+        this._post({ type: "WORKSPACE_FILES", payload: fileTree });
+      } else {
+        this._post({ type: "WORKSPACE_FILES", payload: [] });
+      }
+    } catch (err) {
+      console.error("Error fetching repository structure:", err);
+      this._post({ type: "WORKSPACE_FILES", payload: [] });
+    }
+  }
+
+  private _getGitRemoteOrigin(workspacePath: string): string | null {
+    try {
+      const { execSync } = require("child_process");
+      const output = execSync("git config --get remote.origin.url", {
+        cwd: workspacePath,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).toString().trim();
+      return output || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  private _parseRepoFullName(url: string): string | null {
+    if (!url) return null;
+    let cleanUrl = url.replace(/\.git$/, "");
+    if (cleanUrl.includes("git@")) {
+      const parts = cleanUrl.split(":");
+      return parts[parts.length - 1] || null;
+    }
+    const parts = cleanUrl.split("github.com/");
+    if (parts.length > 1) {
+      return parts[1] || null;
+    }
+    return null;
+  }
+
+  private _getGitHubTree(owner: string, repo: string, branch: string, token?: string): Promise<any[] | null> {
+    return new Promise((resolve) => {
+      const https = require("https");
+      const options = {
+        hostname: "api.github.com",
+        path: `/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
+        method: "GET",
+        headers: {
+          "User-Agent": "Wekraft-VSCode-Extension",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        }
+      };
+      const req = https.request(options, (res: any) => {
+        let data = "";
+        res.on("data", (chunk: any) => data += chunk);
+        res.on("end", () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const json = JSON.parse(data);
+              resolve(json.tree ?? null);
+            } catch (e) {
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+        });
+      });
+      req.on("error", () => resolve(null));
+      req.end();
+    });
+  }
+
+  private _shouldSkipGitHubItem(itemPath: string, isFile: boolean): boolean {
+    const SKIP_FOLDERS = new Set([
+      "node_modules", ".next", ".nuxt", ".output", "dist", "build", "out", ".cache", ".turbo", ".vercel",
+      ".git", ".github", "coverage", "logs", ".vscode", ".idea", "__pycache__", ".venv", "venv", "env"
+    ]);
+    const SKIP_FILES = new Set([
+      "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", ".gitignore"
+    ]);
+
+    const parts = itemPath.split("/");
+    const fileName = parts[parts.length - 1];
+    
+    if (parts.some(p => SKIP_FOLDERS.has(p))) return true;
+    if (isFile) {
+      if (SKIP_FILES.has(fileName)) return true;
+      if (fileName.startsWith(".")) return true;
+    }
+    return false;
+  }
+
+  private _buildTreeFromFlatList(items: any[]): any[] {
+    const root: any[] = [];
+    const map: Record<string, any> = {};
+
+    for (const item of items) {
+      const parts = item.path.split("/");
+      const name = parts[parts.length - 1];
+      const node: any = {
+        name,
+        path: item.path,
+        type: item.type === "tree" ? "directory" : "file",
+      };
+      if (item.type === "tree") {
+        node.children = [];
+      }
+      map[item.path] = node;
+
+      if (parts.length === 1) {
+        root.push(node);
+      } else {
+        const parentPath = parts.slice(0, -1).join("/");
+        const parent = map[parentPath];
+        if (parent && parent.children) {
+          parent.children.push(node);
+        } else {
+          root.push(node);
+        }
+      }
+    }
+
+    const sortNodes = (nodes: any[]) => {
+      nodes.forEach(n => {
+        if (n.children) sortNodes(n.children);
+      });
+      nodes.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+    };
+    sortNodes(root);
+    return root;
+  }
+
+  private _getWorkspaceFileTree(dir: string, baseDir: string = dir): any[] {
+    try {
+      const items = fs.readdirSync(dir, { withFileTypes: true });
+      const nodes: any[] = [];
+
+      for (const item of items) {
+        const name = item.name;
+        if (
+          name.startsWith(".") ||
+          name === "node_modules" ||
+          name === "dist" ||
+          name === "build" ||
+          name === "out" ||
+          name === "package-lock.json" ||
+          name === "yarn.lock" ||
+          name === "pnpm-lock.yaml"
+        ) {
+          continue;
+        }
+
+        const fullPath = path.join(dir, name);
+        const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
+
+        if (item.isDirectory()) {
+          const children = this._getWorkspaceFileTree(fullPath, baseDir);
+          nodes.push({
+            name,
+            path: relativePath,
+            type: "directory",
+            children: children.sort((a, b) => {
+              if (a.type !== b.type) {
+                return a.type === "directory" ? -1 : 1;
+              }
+              return a.name.localeCompare(b.name);
+            }),
+          });
+        } else if (item.isFile()) {
+          nodes.push({
+            name,
+            path: relativePath,
+            type: "file",
+          });
+        }
+      }
+
+      return nodes.sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === "directory" ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+    } catch (err) {
+      console.error("Error reading workspace dir:", err);
+      return [];
+    }
   }
 
   private _nonce(): string {
