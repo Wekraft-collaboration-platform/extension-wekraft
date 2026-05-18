@@ -272,7 +272,11 @@ function onTaskDeleted(taskId) {
 }
 
 function onIssueUpdated(issue) {
-  state.issues = state.issues.map((i) => (i.id === issue.id ? issue : i));
+  if (issue.status === "closed") {
+    state.issues = state.issues.filter((i) => i.id !== issue.id);
+  } else {
+    state.issues = state.issues.map((i) => (i.id === issue.id ? issue : i));
+  }
 
   // If this issue has a linked task, dynamically update its blocked status in real-time on the client side
   if (issue.taskId) {
@@ -712,7 +716,13 @@ function confirmDelete(type, id) {
   const name = type === "task"
     ? (state.tasks.find((t) => t.id === id)?.title ?? "this task")
     : (state.issues.find((i) => i.id === id)?.title ?? "this issue");
-  if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) { return; }
+
+  const promptText = window.prompt(`To delete "${name}", please type "delete" below to confirm:`);
+  
+  if (promptText === null || promptText.trim().toLowerCase() !== "delete") {
+    return;
+  }
+
   if (type === "task") {
     post({ type: "DELETE_TASK", payload: { taskId: id } });
   } else {
