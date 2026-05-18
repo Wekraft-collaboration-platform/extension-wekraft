@@ -380,15 +380,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         <input id="edit-link-codebase" class="input input-sm" type="text" placeholder="e.g. src/api/tasks.ts" />
       </div>
 
-      <!-- isBlocked toggle (only for tasks) -->
-      <div id="task-blocked-row" class="blocked-row">
-        <label class="label" for="edit-is-blocked">Mark as Blocked</label>
-        <label class="toggle-switch">
-          <input id="edit-is-blocked" type="checkbox" />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
       <div class="form-actions">
         <button id="btn-save-edit" class="btn btn-primary btn-sm">Save changes</button>
       </div>

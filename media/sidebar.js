@@ -375,12 +375,41 @@ function openEditPanel(type, id) {
     // Estimation dates
     const startEl = $("edit-start-date");
     const endEl   = $("edit-end-date");
-    if (startEl) startEl.value = item?.estimation?.startDate
-      ? new Date(item.estimation.startDate).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0];
-    if (endEl) endEl.value = item?.estimation?.endDate
-      ? new Date(item.estimation.endDate).toISOString().split("T")[0]
-      : new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0]; // default +7 days
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    if (startEl) {
+      startEl.min = todayStr;
+      startEl.readOnly = false;
+      startEl.style.pointerEvents = "";
+      startEl.style.opacity = "";
+      startEl.style.cursor = "";
+
+      let startVal = todayStr;
+      if (item?.estimation?.startDate) {
+        const itemStartStr = new Date(item.estimation.startDate).toISOString().split("T")[0];
+        if (itemStartStr >= todayStr) {
+          startVal = itemStartStr;
+        }
+      }
+      startEl.value = startVal;
+    }
+
+    if (endEl) {
+      const startVal = startEl ? startEl.value : todayStr;
+      const nextDay = new Date(startVal);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayStr = nextDay.toISOString().split("T")[0];
+      endEl.min = nextDayStr;
+
+      let endVal = item?.estimation?.endDate
+        ? new Date(item.estimation.endDate).toISOString().split("T")[0]
+        : new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0]; // default +7 days
+
+      if (endVal <= startVal) {
+        endVal = nextDayStr;
+      }
+      endEl.value = endVal;
+    }
 
     // Type tag
     const typeLbl = $("edit-type-label");
@@ -391,10 +420,6 @@ function openEditPanel(type, id) {
     // Link with codebase
     const linkEl = $("edit-link-codebase");
     if (linkEl) linkEl.value = item?.linkWithCodebase ?? "";
-
-    // isBlocked
-    const blockedEl = $("edit-is-blocked");
-    if (blockedEl) blockedEl.checked = item?.isBlocked ?? false;
   }
 
   buildAvatarAssigneeSelect(item?.assigneeId);
@@ -440,16 +465,34 @@ function saveEdit() {
     const blockedEl = $("edit-is-blocked");
 
     if (startEl?.value && endEl?.value) {
+      const todayStr = new Date().toISOString().split("T")[0];
+      if (startEl.value < todayStr) {
+        alert("Start Date cannot be in the past.");
+        startEl.focus();
+        return;
+      }
+
+      const startT = new Date(startEl.value).getTime();
+      const endT = new Date(endEl.value).getTime();
+      if (startT >= endT) {
+        alert("End Date must be after the Start Date.");
+        endEl.focus();
+        return;
+      }
+
       payload.estimation = {
-        startDate: new Date(startEl.value).getTime(),
-        endDate:   new Date(endEl.value).getTime(),
+        startDate: startT,
+        endDate:   endT,
       };
     }
 
     const tagLabel = typeLbl?.value?.trim();
     payload.type = tagLabel ? { label: tagLabel, color: typeClr?.value ?? "#6366f1" } : null;
     payload.linkWithCodebase = linkEl?.value?.trim() || null;
-    payload.isBlocked = blockedEl?.checked ?? false;
+    
+    // Preserve existing blocked state if element is removed from UI
+    const item = id ? state.tasks.find((t) => t.id === id) : null;
+    payload.isBlocked = blockedEl ? blockedEl.checked : (item?.isBlocked ?? false);
   }
 
   if (!id) {
@@ -649,6 +692,23 @@ editTitle.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { saveEdit(); }
   if (e.key === "Escape") { closeEditPanel(); }
 });
+
+// Dynamic validation for start & end date fields
+const startEl = $("edit-start-date");
+const endEl   = $("edit-end-date");
+if (startEl && endEl) {
+  startEl.addEventListener("change", () => {
+    if (startEl.value) {
+      const nextDay = new Date(startEl.value);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayStr = nextDay.toISOString().split("T")[0];
+      endEl.min = nextDayStr;
+      if (endEl.value && endEl.value <= startEl.value) {
+        endEl.value = nextDayStr;
+      }
+    }
+  });
+}
 
 // ── Boot ──────────────────────────────────────────────────────
 
