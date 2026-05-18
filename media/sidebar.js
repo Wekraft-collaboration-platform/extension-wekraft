@@ -504,7 +504,7 @@ function saveEdit() {
     description: descEl?.value?.trim() || undefined,
     status: editStatus.value || undefined,
     priority: editPriority.value || undefined,
-    assigneeId: assigneeEl?.value || undefined,
+    assigneeId: assigneeEl ? assigneeEl.value : undefined,
   };
 
   if (type === "task") {
@@ -579,9 +579,6 @@ function buildAvatarAssigneeSelect(selectedId = "") {
   const displayBtn = $("assignee-selected");
   if (!hiddenInput || !dropdown || !displayBtn) { return; }
 
-  const myMember = state.teamMembers.find((m) => m.userId === state.auth.user?.id);
-  const isAdmin = myMember && (myMember.role === "admin" || myMember.role === "owner");
-
   const allOptions = [
     { userId: "", name: "Unassigned", avatarUrl: null },
     ...state.teamMembers.map((m) => ({
@@ -612,11 +609,9 @@ function buildAvatarAssigneeSelect(selectedId = "") {
   setSelected(selectedId ?? "");
 
   dropdown.innerHTML = allOptions.map((o) => {
-    const canSelect = isAdmin || !o.userId || o.userId === state.auth.user?.id;
-    return `<div class="assignee-option${canSelect ? "" : " disabled"}" data-userid="${o.userId}">
+    return `<div class="assignee-option" data-userid="${o.userId}">
       ${renderAvatar(o.avatarUrl, o.name)}
       <span>${esc(o.name)}</span>
-      ${!canSelect ? '<span style="margin-left:auto;font-size:9px;opacity:0.4;">admin only</span>' : ""}
     </div>`;
   }).join("");
 
