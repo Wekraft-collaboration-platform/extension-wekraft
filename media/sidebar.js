@@ -196,9 +196,21 @@ function onSprintsLoaded(sprints) {
   selectSprint.innerHTML = '<option value="">All tasks</option>';
   sprints.forEach((s) => {
     const opt = document.createElement("option");
-    opt.value = s.id;
-    const icon = s.status === "active" ? "🟢 " : s.status === "planning" ? "🔵 " : "✓ ";
-    opt.textContent = icon + s.name;
+    opt.value = s.id || s._id;
+    // Convex schema: sprintName (not name), status: "planned" | "active" | "completed"
+    const icon = s.status === "active"  ? "🟢 "
+                : s.status === "planned" ? "🔵 "
+                : "✓ ";
+    const label = s.sprintName || s.name || "(unnamed sprint)";
+    // Show date range alongside the name
+    let dateRange = "";
+    const start = s.duration?.startDate ?? s.startDate;
+    const end   = s.duration?.endDate   ?? s.endDate;
+    if (start && end) {
+      const fmt = (ts) => new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      dateRange = ` (${fmt(start)} – ${fmt(end)})`;
+    }
+    opt.textContent = icon + label + dateRange;
     selectSprint.appendChild(opt);
   });
 }
@@ -1032,6 +1044,14 @@ if (startDateEl && endDateEl) {
     }
   });
 }
+
+// Wire up color picker dots — must run after DOM is ready
+document.querySelectorAll(".tag-color-picker .color-dot").forEach((dot) => {
+  dot.addEventListener("click", () => {
+    const color = dot.getAttribute("data-color");
+    if (color) selectTagColor(color);
+  });
+});
 
 // ── Repository Structure Tree Rendering ──────────────────────
 

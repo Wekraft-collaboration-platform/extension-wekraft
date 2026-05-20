@@ -47,16 +47,22 @@ export interface Project {
 
 // ── Sprints ───────────────────────────────────────────────────
 
-export type SprintStatus = "planning" | "active" | "completed";
+/** Matches Convex schema: status is "planned" (not "planning") */
+export type SprintStatus = "planned" | "active" | "completed";
 
 export interface Sprint {
   id: string;
   projectId: string;
-  name: string;
-  goal?: string;
+  /** Convex field: sprintName */
+  sprintName: string;
+  /** Convex field: sprintGoal */
+  sprintGoal?: string;
   status: SprintStatus;
-  startDate: number;
-  endDate: number;
+  /** Convex field: duration.startDate */
+  duration: {
+    startDate: number;
+    endDate: number;
+  };
   createdAt: number;
 }
 
