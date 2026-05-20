@@ -75,6 +75,8 @@ export interface Task {
   priority: TaskPriority;
   assigneeId?: string;
   assignee?: WekraftUser;
+  assigneeIds?: string[];
+  assignees?: WekraftUser[];
   reporterId: string;
   labels?: string[];
   dueDate?: number;
@@ -95,6 +97,7 @@ export interface CreateTaskInput {
   status?: TaskStatus;
   priority?: TaskPriority;
   assigneeId?: string;
+  assigneeIds?: string[];
   dueDate?: number;
   estimatedHours?: number;
   estimation?: { startDate: number; endDate: number };
@@ -110,6 +113,7 @@ export interface UpdateTaskInput {
   status?: TaskStatus;
   priority?: TaskPriority;
   assigneeId?: string;
+  assigneeIds?: string[];
   sprintId?: string;
   labels?: string[];
   dueDate?: number;
@@ -134,10 +138,29 @@ export interface Issue {
   priority: IssuePriority;
   assigneeId?: string;
   assignee?: WekraftUser;
+  assigneeIds?: string[];
+  assignees?: WekraftUser[];
   reporterId: string;
   labels?: string[];
   createdAt: number;
   updatedAt: number;
+  environment?: "local" | "dev" | "staging" | "production";
+  severity?: "critical" | "medium" | "low";
+  due_date?: number;
+  fileLinked?: string | null;
+}
+
+export interface CreateIssueInput {
+  projectId: string;
+  title: string;
+  description?: string;
+  status: IssueStatus;
+  severity?: "critical" | "medium" | "low";
+  environment?: "local" | "dev" | "staging" | "production";
+  due_date?: number;
+  fileLinked?: string | null;
+  type: "manual" | "task-issue" | "github";
+  assignees?: { userId: string; name: string; avatar?: string }[];
 }
 
 export interface UpdateIssueInput {
@@ -145,8 +168,12 @@ export interface UpdateIssueInput {
   title?: string;
   description?: string;
   status?: IssueStatus;
-  priority?: IssuePriority;
-  assigneeId?: string;
+  priority?: IssuePriority; // mapped to severity on backend
+  severity?: "critical" | "medium" | "low";
+  environment?: "local" | "dev" | "staging" | "production";
+  due_date?: number;
+  fileLinked?: string | null;
+  assignees?: { userId: string; name: string; avatar?: string }[];
   labels?: string[];
 }
 
@@ -184,6 +211,7 @@ export type WebviewToExtensionMessage =
   | { type: "UPDATE_TASK"; payload: UpdateTaskInput }
   | { type: "MARK_TASK_AS_ISSUE"; payload: { taskId: string } }
   | { type: "DELETE_TASK"; payload: { taskId: string } }
+  | { type: "CREATE_ISSUE"; payload: CreateIssueInput }
   | { type: "UPDATE_ISSUE"; payload: UpdateIssueInput }
   | { type: "FETCH_REPO_STRUCTURE"; payload: { repoFullName?: string } }
   | { type: "DELETE_ISSUE"; payload: { issueId: string } };
@@ -199,6 +227,7 @@ export type ExtensionToWebviewMessage =
   | { type: "TASK_UPDATED"; payload: Task }
   | { type: "TASK_MARKED_AS_ISSUE"; payload: { taskId: string } }
   | { type: "TASK_DELETED"; payload: { taskId: string } }
+  | { type: "ISSUE_CREATED"; payload: Issue }
   | { type: "ISSUE_UPDATED"; payload: Issue }
   | { type: "ISSUE_DELETED"; payload: { issueId: string } }
   | { type: "ERROR"; payload: { message: string } }

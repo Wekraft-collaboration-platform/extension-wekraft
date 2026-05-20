@@ -83,6 +83,7 @@ window.addEventListener("message", ({ data: msg }) => {
     case "TEAM_MEMBERS_LOADED": onTeamLoaded(msg.payload); break;
     case "TASK_CREATED": onTaskCreated(msg.payload); break;
     case "TASK_UPDATED": onTaskUpdated(msg.payload); break;
+    case "ISSUE_CREATED": onIssueCreated(msg.payload); break;
     case "TASK_MARKED_AS_ISSUE":
       loadAll();
       closeEditPanel();
@@ -225,7 +226,7 @@ function onIssuesLoaded(issues) {
 
 function onTeamLoaded(members) {
   state.teamMembers = members;
-  buildAssigneeSelect();
+  buildAvatarAssigneeSelect([]);
   updateUserRoleForSelectedProject();
 
   if (members.length > 0) {
@@ -271,19 +272,22 @@ function onTaskDeleted(taskId) {
   renderItems();
 }
 
-function onIssueUpdated(issue) {
-  if (issue.status === "closed") {
-    state.issues = state.issues.filter((i) => i.id !== issue.id);
-  } else {
-    state.issues = state.issues.map((i) => (i.id === issue.id ? issue : i));
+function onIssueCreated(issue) {
+  state.issues = [issue, ...state.issues];
+  if (state.activeView === "issues") {
+    renderItems();
   }
+  closeEditPanel();
+}
+
+function onIssueUpdated(issue) {
+  state.issues = state.issues.map((i) => (i.id === issue.id ? issue : i));
 
   // If this issue has a linked task, dynamically update its blocked status in real-time on the client side
-  if (issue.taskId) {
-    const isClosed = issue.status === "closed";
+  if (issue.taskId && issue.status === "closed") {
     state.tasks = state.tasks.map((t) => {
       if (t.id === issue.taskId) {
-        return { ...t, isBlocked: !isClosed };
+        return { ...t, isBlocked: false };
       }
       return t;
     });
@@ -356,8 +360,29 @@ function itemCardHtml(item) {
   const statusLabel = (item.status || "").replace(/_/g, " ");
   const statusCls = `badge-${item.status}`;
 
-  const assigneeName = item.assignee?.name ?? "";
-  const assigneeInitial = assigneeName ? assigneeName[0].toUpperCase() : "";
+  const renderAssigneesHtml = (assignees) => {
+    if (!assignees || assignees.length === 0) return "";
+    let html = `<div style="display:flex; align-items:center;" class="item-assignee">`;
+    const maxShow = 3;
+    assignees.slice(0, maxShow).forEach((a, idx) => {
+      const z = maxShow - idx;
+      if (a.avatarUrl) {
+         html += `<img src="${esc(a.avatarUrl)}" class="mini-avatar-img" style="width:16px;height:16px;border-radius:50%;border:1px solid var(--vscode-sideBar-background); margin-left:${idx>0?'-6px':'0'}; z-index:${z}; position:relative;"/>`;
+      } else {
+         const initial = (a.name || "?")[0].toUpperCase();
+         html += `<span class="mini-avatar" style="width:16px;height:16px;font-size:8px;border:1px solid var(--vscode-sideBar-background); margin-left:${idx>0?'-6px':'0'}; z-index:${z}; position:relative; flex-shrink:0;">${esc(initial)}</span>`;
+      }
+    });
+    if (assignees.length > maxShow) {
+      html += `<span style="font-size:9px; margin-left: 4px; opacity:0.8;">+${assignees.length - maxShow}</span>`;
+    } else if (assignees.length === 1) {
+      html += `<span style="font-size:10px; margin-left:4px; opacity:0.8; max-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(assignees[0].name)}</span>`;
+    }
+    html += `</div>`;
+    return html;
+  };
+
+  const assigneesList = item.assignees?.length > 0 ? item.assignees : (item.assignee ? [item.assignee] : []);
 
   return /* html */ `
     <div class="item-card" data-id="${item.id}" data-type="${isIssue ? "issue" : "task"}">
@@ -370,11 +395,7 @@ function itemCardHtml(item) {
         </div>
         <div class="item-meta">
           <span class="task-badge ${statusCls}">${statusLabel}</span>
-          ${assigneeName
-      ? `<span class="item-assignee">
-                ${item.assignee?.avatarUrl ? `<img src="${esc(item.assignee.avatarUrl)}" class="mini-avatar-img" style="width:14px;height:14px;border-radius:50%;"/>` : `<span class="mini-avatar">${esc(assigneeInitial)}</span>`}${esc(assigneeName)}
-               </span>`
-      : ""}
+          ${renderAssigneesHtml(assigneesList)}
           ${!isIssue && item.estimation?.endDate
       ? `<span class="item-assignee" style="margin-left:auto; opacity:0.8;">⏱ ${new Date(item.estimation.endDate).toLocaleDateString()}</span>`
       : ""}
@@ -442,16 +463,21 @@ function openEditPanel(type, id) {
   const descEl = $("edit-description");
   if (descEl) descEl.value = item?.description ?? "";
 
-  // Task-specific fields
+  // Task-specific & Issue-specific fields
   const isTask = type === "task";
   const taskDates = $("task-dates");
   const taskTypeRow = $("task-type-row");
   const taskLinkRow = $("task-link-row");
   const taskBlocked = $("task-blocked-row");
+  const issueDueDateRow = $("issue-due-date-row");
+  const issueEnvironmentRow = $("issue-environment-row");
+
   if (taskDates) taskDates.style.display = isTask ? "" : "none";
   if (taskTypeRow) taskTypeRow.style.display = isTask ? "" : "none";
-  if (taskLinkRow) taskLinkRow.style.display = isTask ? "" : "none";
+  if (taskLinkRow) taskLinkRow.style.display = ""; // Always show Link with Codebase
   if (taskBlocked) taskBlocked.style.display = isTask ? "" : "none";
+  if (issueDueDateRow) issueDueDateRow.style.display = isTask ? "none" : "";
+  if (issueEnvironmentRow) issueEnvironmentRow.style.display = isTask ? "none" : "";
 
   if (isTask) {
     // Estimation dates
@@ -508,9 +534,27 @@ function openEditPanel(type, id) {
       blockedEl.checked = !!item?.isBlocked;
       blockedEl.disabled = !!item?.isBlocked;
     }
+  } else {
+    // Issue-specific pre-fill
+    const dueDateEl = $("edit-due-date");
+    if (dueDateEl) {
+      dueDateEl.value = item?.due_date 
+        ? new Date(item.due_date).toISOString().split("T")[0]
+        : "";
+    }
+
+    const envEl = $("edit-environment");
+    if (envEl) {
+      envEl.value = item?.environment ?? "local";
+    }
+
+    const linkEl = $("edit-link-codebase");
+    if (linkEl) {
+      linkEl.value = item?.fileLinked ?? "";
+    }
   }
 
-  buildAvatarAssigneeSelect(item?.assigneeId);
+  buildAvatarAssigneeSelect(item?.assigneeIds?.length > 0 ? item.assigneeIds : (item?.assigneeId ? [item.assigneeId] : []));
 
   // Clear repository search query and refresh structure highlights
   if (repoSearch) { repoSearch.value = ""; }
@@ -570,11 +614,22 @@ function saveEdit() {
     title: editTitle.value.trim(),
     description: descEl?.value?.trim() || undefined,
     status: editStatus.value || undefined,
-    priority: editPriority.value || undefined,
-    assigneeId: assigneeEl ? assigneeEl.value : undefined,
   };
 
+  // Build assignees mapping
+  let assigneeIds = [];
+  if (assigneeEl && assigneeEl.value) {
+    try {
+      assigneeIds = JSON.parse(assigneeEl.value);
+    } catch(e) {
+      assigneeIds = [];
+    }
+  }
+
   if (type === "task") {
+    payload.priority = editPriority.value || undefined;
+    payload.assigneeIds = assigneeIds;
+
     // Collect task-specific rich fields
     const startEl = $("edit-start-date");
     const endEl = $("edit-end-date");
@@ -611,13 +666,41 @@ function saveEdit() {
 
     // Preserve existing blocked state if element is removed from UI
     payload.isBlocked = blockedEl ? blockedEl.checked : (item?.isBlocked ?? false);
+  } else {
+    // Collect issue-specific fields
+    const dueDateEl = $("edit-due-date");
+    if (dueDateEl?.value) {
+      payload.due_date = new Date(dueDateEl.value).getTime();
+    } else {
+      payload.due_date = undefined;
+    }
+
+    const envEl = $("edit-environment");
+    if (envEl?.value) {
+      payload.environment = envEl.value;
+    }
+
+    payload.severity = editPriority.value; // Map select value to severity
+
+    const linkEl = $("edit-link-codebase");
+    payload.fileLinked = linkEl?.value?.trim() || null;
+
+    // Map assigneeIds to assignee object array { userId, name, avatar }
+    payload.assignees = assigneeIds.map((uid) => {
+      const member = state.teamMembers.find((m) => m.userId === uid);
+      return {
+        userId: uid,
+        name: member?.user?.name || "Unknown",
+        avatar: member?.user?.avatarUrl || undefined,
+      };
+    });
   }
 
   if (!id) {
-    // Create Mode (tasks only)
+    // Create Mode (tasks or issues)
     payload.projectId = state.projectId;
-    if (state.sprintId) { payload.sprintId = state.sprintId; }
     if (type === "task") {
+      if (state.sprintId) { payload.sprintId = state.sprintId; }
       if (!payload.estimation) {
         const now = Date.now();
         payload.estimation = { startDate: now, endDate: now + 86400000 * 7 };
@@ -626,10 +709,15 @@ function saveEdit() {
       state.pendingMarkAsIssue = blockedEl ? blockedEl.checked : false;
 
       post({ type: "CREATE_TASK", payload });
-      editTitle.disabled = true;
-      btnSaveEdit.disabled = true;
+    } else {
+      // Issue Create
+      payload.type = "manual";
+      post({ type: "CREATE_ISSUE", payload });
     }
+    editTitle.disabled = true;
+    btnSaveEdit.disabled = true;
   } else {
+    // Edit Mode
     if (type === "task") {
       const wasBlocked = item?.isBlocked ?? false;
       const nowBlocked = payload.isBlocked ?? false;
@@ -647,7 +735,7 @@ function saveEdit() {
 
 // ── Rich Avatar Assignee Dropdown ──────────────────────────────
 
-function buildAvatarAssigneeSelect(selectedId = "") {
+function buildAvatarAssigneeSelect(selectedIds = []) {
   const hiddenInput = $("edit-assignee");
   const namePreview = $("assignee-name-preview");
   const avatarPreview = $("assignee-avatar-preview");
@@ -655,60 +743,82 @@ function buildAvatarAssigneeSelect(selectedId = "") {
   const displayBtn = $("assignee-selected");
   if (!hiddenInput || !dropdown || !displayBtn) { return; }
 
-  const allOptions = [
-    { userId: "", name: "Unassigned", avatarUrl: null },
-    ...state.teamMembers.map((m) => ({
-      userId: m.userId,
-      name: m.user?.name ?? m.userId,
-      avatarUrl: m.user?.avatarUrl ?? null,
-    }))
-  ];
+  let currentSelected = Array.isArray(selectedIds) ? [...selectedIds] : (selectedIds ? [selectedIds] : []);
+
+  const allOptions = state.teamMembers.map((m) => ({
+    userId: m.userId,
+    name: m.user?.name ?? m.userId,
+    avatarUrl: m.user?.avatarUrl ?? null,
+  }));
 
   const renderAvatar = (av, nm) => av
     ? `<img src="${esc(av)}" class="mini-avatar-img" style="width:18px;height:18px;border-radius:50%;"/>`
     : `<span class="mini-avatar" style="width:18px;height:18px;font-size:9px;flex-shrink:0;">${esc((nm || "?")[0].toUpperCase())}</span>`;
 
-  const setSelected = (userId) => {
-    hiddenInput.value = userId;
-    if (!userId) {
+  const renderPreviews = () => {
+    hiddenInput.value = JSON.stringify(currentSelected);
+    if (currentSelected.length === 0) {
       avatarPreview.innerHTML = `<span style="opacity:0.4;font-size:11px;">?</span>`;
       namePreview.textContent = "Unassigned";
-    } else {
-      const m = allOptions.find(o => o.userId === userId);
+    } else if (currentSelected.length === 1) {
+      const m = allOptions.find(o => o.userId === currentSelected[0]);
       if (m) {
         avatarPreview.innerHTML = renderAvatar(m.avatarUrl, m.name);
         namePreview.textContent = m.name;
+      } else {
+        avatarPreview.innerHTML = `<span style="opacity:0.4;font-size:11px;">?</span>`;
+        namePreview.textContent = "Unknown User";
       }
+    } else {
+      avatarPreview.innerHTML = currentSelected.slice(0, 2).map(id => {
+        const m = allOptions.find(o => o.userId === id);
+        return m ? renderAvatar(m.avatarUrl, m.name) : '';
+      }).join("") + (currentSelected.length > 2 ? `<span style="font-size:9px; margin-left: 2px;">+${currentSelected.length-2}</span>` : "");
+      namePreview.textContent = `${currentSelected.length} Assignees`;
     }
   };
 
-  setSelected(selectedId ?? "");
+  const bindOptions = () => {
+    dropdown.innerHTML = allOptions.map((o) => {
+      const isSelected = currentSelected.includes(o.userId);
+      return `<div class="assignee-option" data-userid="${o.userId}" style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          ${renderAvatar(o.avatarUrl, o.name)}
+          <span>${esc(o.name)}</span>
+        </div>
+        ${isSelected ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ""}
+      </div>`;
+    }).join("");
 
-  dropdown.innerHTML = allOptions.map((o) => {
-    return `<div class="assignee-option" data-userid="${o.userId}">
-      ${renderAvatar(o.avatarUrl, o.name)}
-      <span>${esc(o.name)}</span>
-    </div>`;
-  }).join("");
+    dropdown.querySelectorAll(".assignee-option").forEach((opt) => {
+      opt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const uid = opt.getAttribute("data-userid") ?? "";
+        if (currentSelected.includes(uid)) {
+          currentSelected = currentSelected.filter(id => id !== uid);
+        } else {
+          currentSelected.push(uid);
+        }
+        renderPreviews();
+        bindOptions();
+      });
+    });
+  };
 
-  // Toggle dropdown
+  renderPreviews();
+  bindOptions();
+
   displayBtn.onclick = (e) => {
     e.stopPropagation();
     dropdown.classList.toggle("hidden");
   };
 
-  // Select option
-  dropdown.querySelectorAll(".assignee-option:not(.disabled)").forEach((opt) => {
-    opt.addEventListener("click", (e) => {
-      e.stopPropagation();
-      setSelected(opt.getAttribute("data-userid") ?? "");
+  // Close on outside click only
+  document.addEventListener("click", (e) => {
+    if (dropdown && displayBtn && !dropdown.contains(e.target) && !displayBtn.contains(e.target)) {
       dropdown.classList.add("hidden");
-    });
+    }
   });
-
-  // Close on outside click
-  const closeHandler = () => dropdown.classList.add("hidden");
-  setTimeout(() => document.addEventListener("click", closeHandler, { once: true }), 0);
 }
 
 
@@ -804,6 +914,8 @@ function esc(str) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+
+
 
 // ── Wire up buttons ───────────────────────────────────────────
 

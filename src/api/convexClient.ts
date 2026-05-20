@@ -7,6 +7,7 @@ import {
   TeamMember,
   CreateTaskInput,
   UpdateTaskInput,
+  CreateIssueInput,
   UpdateIssueInput,
   ApiResponse,
 } from "../types";
@@ -47,6 +48,16 @@ export class ConvexClient {
   async getProjects(): Promise<Project[]> {
     const res = await this._get<Project[]>("/ext/projects");
     return res.data ?? [];
+  }
+  
+  // ── User Profile ──────────────────────────────────────────
+  
+  async getMe(): Promise<any> {
+    const res = await this._get<any>("/ext/me");
+    if (!res.success) {
+      throw new Error(res.error ?? "Failed to fetch profile");
+    }
+    return res.data;
   }
 
   // ── Sprints ──────────────────────────────────────────────
@@ -136,6 +147,15 @@ export class ConvexClient {
       `/ext/issues?projectId=${encodeURIComponent(projectId)}`
     );
     return res.data ?? [];
+  }
+
+  /** POST /ext/issues */
+  async createIssue(input: CreateIssueInput): Promise<Issue> {
+    const res = await this._post<Issue>("/ext/issues", input);
+    if (!res.success || !res.data) {
+      throw new Error(res.error ?? "Failed to create issue");
+    }
+    return res.data;
   }
 
   /** PATCH /ext/issues/:issueId */

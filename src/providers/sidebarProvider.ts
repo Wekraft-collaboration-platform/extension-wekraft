@@ -75,6 +75,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       case "READY":
         this._post({ type: "AUTH_STATE", payload: this.authManager.getAuthState() });
         this._sendWorkspaceFiles();
+        if (this.authManager.isAuthenticated) {
+          this.convexClient.getMe().then((me) => {
+            if (me) this.authManager.updateUser(me);
+          }).catch(console.error);
+        }
         break;
 
       case "FETCH_REPO_STRUCTURE":
@@ -153,6 +158,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           () => this.convexClient.markTaskAsIssue(msg.payload.taskId),
           () => {
             this._post({ type: "TASK_MARKED_AS_ISSUE", payload: { taskId: msg.payload.taskId } });
+          }
+        );
+        break;
+
+      case "CREATE_ISSUE":
+        await this._run(
+          () => this.convexClient.createIssue(msg.payload),
+          (data) => {
+            this._post({ type: "ISSUE_CREATED", payload: data });
+            this._post({ type: "LOADING", payload: { isLoading: false } });
           }
         );
         break;
@@ -376,6 +391,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           <label class="label">End Date</label>
           <input id="edit-end-date" class="input input-sm" type="date" />
         </div>
+      </div>
+
+      <!-- Dates (only shown for issues) -->
+      <div id="issue-due-date-row" class="field" style="margin-top: 8px;">
+        <label class="label">Due Date</label>
+        <input id="edit-due-date" class="input input-sm" type="date" />
+      </div>
+
+      <!-- Environment (only shown for issues) -->
+      <div id="issue-environment-row" class="field" style="margin-top: 8px;">
+        <label class="label">Environment</label>
+        <select id="edit-environment" class="select select-sm">
+          <option value="local">Local</option>
+          <option value="dev">Dev</option>
+          <option value="staging">Staging</option>
+          <option value="production">Production</option>
+        </select>
       </div>
 
       <!-- Tag / Type (only for tasks) -->

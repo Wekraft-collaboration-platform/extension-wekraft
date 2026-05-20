@@ -226,6 +226,15 @@ export class AuthManager {
     this._emit();
   }
 
+  async updateUser(userUpdate: any): Promise<void> {
+    if (!this._user) {
+      this._user = { id: this._userId || "", name: "Unknown", email: "", accountType: "free", role: "member" };
+    }
+    this._user = { ...this._user, ...userUpdate };
+    await this.context.globalState.update(GLOBAL_USER, this._user);
+    this._emit();
+  }
+
   private _emit(): void {
     this._onAuthStateChanged.fire(this.getAuthState());
   }
