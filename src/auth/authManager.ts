@@ -125,6 +125,42 @@ export class AuthManager {
       async () => {
         try {
           const result = await this._exchangeToken(token);
+          
+          if (!result.user) {
+            const siteUrl = this._cfg("convexSiteUrl");
+            if (siteUrl) {
+              try {
+                const meResponse = await fetch(`${siteUrl}/ext/me`, {
+                  method: "GET",
+                  headers: {
+                    Authorization: `Bearer ${result.apiKey}`,
+                    "X-Wekraft-Client": "vscode-extension/0.0.1",
+                  },
+                });
+                if (meResponse.ok) {
+                  const json = (await meResponse.json()) as {
+                    success: boolean;
+                    data?: {
+                      name: string;
+                      avatarUrl?: string;
+                      accountType?: string;
+                    };
+                    error?: string;
+                  };
+                  if (json.success && json.data) {
+                    result.user = {
+                      name: json.data.name,
+                      avatarUrl: json.data.avatarUrl ?? "",
+                      accountType: json.data.accountType || "free",
+                    };
+                  }
+                }
+              } catch (e) {
+                console.error("[Wekraft] Failed to fetch user info on login:", e);
+              }
+            }
+          }
+
           await this._persistSession(result);
           vscode.window.showInformationMessage(
             `Wekraft: Welcome${this._user ? `, ${this._user.name}` : ""}! ✓`

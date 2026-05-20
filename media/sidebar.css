@@ -19,12 +19,29 @@
   --wk-gap-lg: 14px;
   --wk-transition: 150ms ease;
 
-  /* Priority colours */
-  --priority-urgent: #ef4444;
-  --priority-high: #f97316;
-  --priority-medium: #eab308;
-  --priority-low: #22c55e;
-  --priority-none: var(--vscode-descriptionForeground);
+  /* Priority colours — matches web-app static-store.tsx */
+  --priority-urgent:   #ef4444; /* critical / urgent */
+  --priority-high:     #ef4444; /* high  = red   */
+  --priority-medium:   #22c55e; /* medium = green */
+  --priority-low:      #eab308; /* low   = yellow */
+  --priority-none:     var(--vscode-descriptionForeground);
+
+  /* Tag named-token colours — matches web-app TAG_COLOR_MAP */
+  --tag-green-bg:    rgba(16,185,129,0.15);
+  --tag-green-text:  #10b981;
+  --tag-green-border:rgba(16,185,129,0.35);
+  --tag-yellow-bg:   rgba(234,179,8,0.15);
+  --tag-yellow-text: #eab308;
+  --tag-yellow-border:rgba(234,179,8,0.35);
+  --tag-purple-bg:   rgba(168,85,247,0.15);
+  --tag-purple-text: #a855f7;
+  --tag-purple-border:rgba(168,85,247,0.35);
+  --tag-blue-bg:     rgba(59,130,246,0.15);
+  --tag-blue-text:   #60a5fa;
+  --tag-blue-border: rgba(59,130,246,0.35);
+  --tag-grey-bg:     rgba(115,115,115,0.15);
+  --tag-grey-text:   #a3a3a3;
+  --tag-grey-border: rgba(115,115,115,0.35);
 }
 
 html,
@@ -425,7 +442,7 @@ body {
   flex-wrap: wrap;
 }
 
-/* Status badges */
+/* ── Status badges — slugified to match statusClass() helper ── */
 .task-badge {
   font-size: 9px;
   padding: 1px 6px;
@@ -433,50 +450,68 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .04em;
+  border: 1px solid transparent;
 }
 
-.badge-todo {
-  background: rgba(99, 102, 241, .15);
+/* Task statuses */
+.badge-not-started {
+  background: rgba(148,163,184,0.12);
+  color: #94a3b8;
+  border-color: rgba(148,163,184,0.25);
+}
+
+.badge-inprogress {
+  background: rgba(234,179,8,0.12);
+  color: #eab308;
+  border-color: rgba(234,179,8,0.25);
+}
+
+.badge-reviewing {
+  background: rgba(59,130,246,0.12);
+  color: #60a5fa;
+  border-color: rgba(59,130,246,0.25);
+}
+
+.badge-testing {
+  background: rgba(99,102,241,0.12);
   color: #818cf8;
+  border-color: rgba(99,102,241,0.25);
 }
 
-.badge-in_progress {
-  background: rgba(245, 158, 11, .15);
-  color: #fbbf24;
-}
-
-.badge-in_review {
-  background: rgba(139, 92, 246, .15);
-  color: #a78bfa;
-}
-
-.badge-done {
-  background: rgba(34, 197, 94, .15);
+.badge-completed {
+  background: rgba(34,197,94,0.12);
   color: #4ade80;
+  border-color: rgba(34,197,94,0.25);
 }
 
-.badge-backlog {
-  background: rgba(148, 163, 184, .12);
-  color: var(--vscode-descriptionForeground);
+/* Issue statuses */
+.badge-not-opened {
+  background: rgba(115,115,115,0.12);
+  color: #a3a3a3;
+  border-color: rgba(115,115,115,0.25);
 }
 
-.badge-open {
-  background: rgba(99, 102, 241, .15);
-  color: #818cf8;
+.badge-opened {
+  background: rgba(59,130,246,0.12);
+  color: #60a5fa;
+  border-color: rgba(59,130,246,0.25);
 }
 
-.badge-resolved {
-  background: rgba(34, 197, 94, .15);
-  color: #4ade80;
+.badge-reopened {
+  background: rgba(168,85,247,0.12);
+  color: #c084fc;
+  border-color: rgba(168,85,247,0.25);
 }
 
 .badge-closed {
-  background: rgba(148, 163, 184, .12);
-  color: var(--vscode-descriptionForeground);
+  background: rgba(34,197,94,0.12);
+  color: #4ade80;
+  border-color: rgba(34,197,94,0.25);
 }
 
-.badge-wont_fix {
-  background: rgba(148, 163, 184, .12);
+/* Fallback for unknown statuses */
+.badge- {
+  background: rgba(115,115,115,0.12);
   color: var(--vscode-descriptionForeground);
 }
 

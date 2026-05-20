@@ -419,13 +419,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         <div class="field" style="width: 100%;">
           <label class="label">Select Color</label>
           <div class="tag-color-picker">
-            <span class="color-dot" data-color="#10b981" style="background-color: #10b981;"></span>
-            <span class="color-dot" data-color="#b45309" style="background-color: #b45309;"></span>
-            <span class="color-dot" data-color="#7c3aed" style="background-color: #7c3aed;"></span>
-            <span class="color-dot" data-color="#2563eb" style="background-color: #2563eb;"></span>
-            <span class="color-dot" data-color="#4b5563" style="background-color: #4b5563;"></span>
+            <span class="color-dot" data-color="green"  style="background-color:#10b981;" title="Green"></span>
+            <span class="color-dot" data-color="yellow" style="background-color:#eab308;" title="Yellow"></span>
+            <span class="color-dot" data-color="purple" style="background-color:#a855f7;" title="Purple"></span>
+            <span class="color-dot" data-color="blue"   style="background-color:#3b82f6;" title="Blue"></span>
+            <span class="color-dot" data-color="grey"   style="background-color:#737373;" title="Grey"></span>
           </div>
-          <input id="edit-type-color" type="hidden" value="#2563eb" />
+          <input id="edit-type-color" type="hidden" value="blue" />
         </div>
       </div>
 
