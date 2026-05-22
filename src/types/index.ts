@@ -210,8 +210,8 @@ export type WebviewToExtensionMessage =
   | { type: "REFRESH" }
   | { type: "FETCH_PROJECTS" }
   | { type: "FETCH_SPRINTS"; payload: { projectId: string } }
-  | { type: "FETCH_TASKS"; payload: { projectId: string; sprintId?: string } }
-  | { type: "FETCH_ISSUES"; payload: { projectId: string } }
+  | { type: "FETCH_TASKS"; payload: { projectId: string; sprintId?: string; epoch?: number } }
+  | { type: "FETCH_ISSUES"; payload: { projectId: string; epoch?: number } }
   | { type: "FETCH_TEAM_MEMBERS"; payload: { projectId: string } }
   | { type: "CREATE_TASK"; payload: CreateTaskInput }
   | { type: "UPDATE_TASK"; payload: UpdateTaskInput }
@@ -226,8 +226,8 @@ export type ExtensionToWebviewMessage =
   | { type: "AUTH_STATE"; payload: AuthState }
   | { type: "PROJECTS_LOADED"; payload: Project[] }
   | { type: "SPRINTS_LOADED"; payload: Sprint[] }
-  | { type: "TASKS_LOADED"; payload: Task[] }
-  | { type: "ISSUES_LOADED"; payload: Issue[] }
+  | { type: "TASKS_LOADED"; payload: { tasks: Task[]; epoch?: number } }
+  | { type: "ISSUES_LOADED"; payload: { issues: Issue[]; epoch?: number } }
   | { type: "TEAM_MEMBERS_LOADED"; payload: TeamMember[] }
   | { type: "TASK_CREATED"; payload: Task }
   | { type: "TASK_UPDATED"; payload: Task }
