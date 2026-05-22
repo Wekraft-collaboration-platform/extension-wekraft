@@ -47,15 +47,23 @@ export class ConvexClient {
   /** GET /ext/projects  →  returns all projects the user can access */
   async getProjects(): Promise<Project[]> {
     const res = await this._get<Project[]>("/ext/projects");
+    if (!res.success) throw new Error(res.error ?? "Failed to fetch projects");
     return res.data ?? [];
   }
   
   // ── User Profile ──────────────────────────────────────────
   
+  /** GET /ext/me  — returns the current user's public profile */
   async getMe(): Promise<any> {
     const res = await this._get<any>("/ext/me");
-    if (!res.success) {
-      throw new Error(res.error ?? "Failed to fetch profile");
+    // /ext/me returns the user object directly at the root (not wrapped in { success, data }).
+    // _get() wraps it as { success: true, data: <body> }, so we read res.data.
+    if (!res.success || !res.data) {
+      throw new Error((res as any).error ?? "Failed to fetch profile");
+    }
+    // Validate the response has at minimum a name field
+    if (!res.data.name) {
+      throw new Error("Malformed profile response from server");
     }
     return res.data;
   }
@@ -67,6 +75,7 @@ export class ConvexClient {
     const res = await this._get<Sprint[]>(
       `/ext/sprints?projectId=${encodeURIComponent(projectId)}`
     );
+    if (!res.success) throw new Error(res.error ?? "Failed to fetch sprints");
     return res.data ?? [];
   }
 
@@ -80,6 +89,7 @@ export class ConvexClient {
     const qs = new URLSearchParams({ projectId });
     if (sprintId) { qs.set("sprintId", sprintId); }
     const res = await this._get<Task[]>(`/ext/tasks?${qs}`);
+    if (!res.success) throw new Error(res.error ?? "Failed to fetch tasks");
     return res.data ?? [];
   }
 
@@ -146,6 +156,7 @@ export class ConvexClient {
     const res = await this._get<Issue[]>(
       `/ext/issues?projectId=${encodeURIComponent(projectId)}`
     );
+    if (!res.success) throw new Error(res.error ?? "Failed to fetch issues");
     return res.data ?? [];
   }
 
@@ -188,6 +199,7 @@ export class ConvexClient {
     const res = await this._get<TeamMember[]>(
       `/ext/team?projectId=${encodeURIComponent(projectId)}`
     );
+    if (!res.success) throw new Error(res.error ?? "Failed to fetch team members");
     return res.data ?? [];
   }
 
@@ -222,16 +234,20 @@ export class ConvexClient {
 
     const url = `${this.siteUrl}${path}`;
 
+    // LOW-03: Timeout every request at 15 s to prevent the UI hanging forever
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15_000);
+
     try {
       const response = await fetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",
-          // API key is injected here — never stored in the webview
           Authorization: `Bearer ${apiKey}`,
           "X-Wekraft-Client": "vscode-extension/0.0.1",
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -245,16 +261,23 @@ export class ConvexClient {
       const data = (await response.json()) as T;
       return { success: true, data };
     } catch (err) {
+      const isTimeout = (err as any)?.name === "AbortError";
       return {
         success: false,
-        error: (err as Error).message ?? "Network error",
+        error: isTimeout ? "Request timed out" : ((err as Error).message ?? "Network error"),
       };
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   private _getSiteUrl(): string {
-    return vscode.workspace
-      .getConfiguration("wekraft")
-      .get<string>("convexSiteUrl", "");
+    // SECURITY (CRIT-03): Read ONLY from user-level global configuration, never workspace.
+    // A malicious .vscode/settings.json in an opened repo could otherwise redirect
+    // API calls (including Bearer tokens) to an attacker-controlled server.
+    const config = vscode.workspace.getConfiguration("wekraft");
+    const inspected = config.inspect<string>("convexSiteUrl");
+    // Prefer explicit global/user value; fall back to default; ignore workspace value.
+    return inspected?.globalValue || inspected?.defaultValue || "";
   }
 }
