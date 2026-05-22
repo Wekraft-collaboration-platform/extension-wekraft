@@ -13,11 +13,11 @@
 }
 
 :root {
-  --wk-radius: 6px;
-  --wk-radius-sm: 4px;
+  --wk-radius: 8px;
+  --wk-radius-sm: 6px;
   --wk-gap: 8px;
-  --wk-gap-lg: 14px;
-  --wk-transition: 150ms ease;
+  --wk-gap-lg: 16px;
+  --wk-transition: 200ms ease;
 
   /* Priority colours — matches web-app static-store.tsx */
   --priority-urgent:   #ef4444; /* critical / urgent */
@@ -53,8 +53,8 @@ body {
 body {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
-  color: var(--vscode-foreground);
-  background: var(--vscode-sideBar-background);
+  color: #f4f4f5 !important;
+  background: #292929 !important;
   padding: 0;
   margin: 0;
   line-height: 1.5;
@@ -65,7 +65,7 @@ body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: 12px 10px;
+  padding: 10px 8px;
   gap: var(--wk-gap);
 }
 
@@ -163,30 +163,240 @@ body {
   }
 }
 
-/* ── User header ─────────────────────────────────────────── */
+/* ── Edit Panel — ep-* System ──────────────────────────────── */
+/* Uniform field spacing for the edit panel */
+.ep-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ep-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #71717a;
+}
+
+/* Two-column row inside the edit panel */
+.ep-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ep-row > .ep-field {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Avatar stack container in assignee display */
+.ep-avatar-stack {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Codebase link row: input + clear button side by side */
+.ep-codebase-row {
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--wk-radius-sm);
+  overflow: hidden;
+}
+
+.ep-codebase-input {
+  flex: 1;
+  border: none !important;
+  border-radius: 0 !important;
+  background: rgba(0, 0, 0, 0.2) !important;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.ep-codebase-input:focus {
+  box-shadow: none !important;
+}
+
+.ep-clear-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  color: #71717a;
+  padding: 0 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: var(--wk-transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.ep-clear-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-left-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Mark-as-issue toggle row */
+.ep-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ── Custom Select Dropdowns (wk-select) ─────────────────── */
+.wk-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.wk-select-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--vscode-dropdown-background, rgba(0,0,0,0.2));
+  border: 1px solid var(--vscode-dropdown-border, rgba(255,255,255,0.1));
+  border-radius: var(--wk-radius-sm);
+  padding: 4px 6px;
+  color: var(--vscode-dropdown-foreground, #fff);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--wk-transition);
+  height: 28px;
+  user-select: none;
+}
+
+.wk-select-display:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.7);
+}
+
+.wk-select-display.open {
+  border-color: rgba(255,255,255,0.9);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.6);
+}
+
+.wk-select-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wk-select-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wk-select-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wk-select-chevron {
+  flex-shrink: 0;
+  opacity: 0.6;
+  margin-left: 6px;
+  transition: transform 0.2s;
+}
+
+.wk-select-display.open .wk-select-chevron {
+  transform: rotate(180deg);
+}
+
+.wk-select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #212121;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--wk-radius-sm);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  padding: 4px;
+}
+
+.wk-select-option {
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: #d4d4d8;
+  font-size: 12px;
+  transition: var(--wk-transition);
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.wk-select-option-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wk-select-option .wk-select-icon {
+  margin-left: auto;
+}
+
+.wk-select-option:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.wk-select-option.selected {
+  background: rgba(59,130,246,0.15);
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+/* ── Edit Panel Header ───────────────────────────────────────── */
 
 .user-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--vscode-input-background);
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.15);
   border-radius: var(--wk-radius);
-  border: 1px solid var(--vscode-input-border, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: 25%;
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
-  font-size: 11px;
+  font-size: 18px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  border: none;
+}
+
+.user-avatar.has-image {
+  background: transparent;
 }
 
 .user-info {
@@ -262,19 +472,62 @@ body {
 
 /* ── Tabs ────────────────────────────────────────────────── */
 
+.status-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 4px 0;
+}
+
 .tabs {
   display: flex;
   gap: 2px;
-  background: var(--vscode-input-background);
-  border-radius: var(--wk-radius);
-  padding: 3px;
-  border: 1px solid var(--vscode-input-border, transparent);
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+  scroll-behavior: smooth;
+  position: relative;
+}
+
+/* Custom thin white scrollbar for the status tabs */
+.tabs::-webkit-scrollbar {
+  height: 2px;
+}
+.tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tabs::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 2px;
+}
+.tabs::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+.tabs::-webkit-scrollbar-button {
+  display: none;
+}
+
+.tabs::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .tab {
-  flex: 1;
-  padding: 4px 6px;
-  font-size: 10px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 11px;
   font-weight: 500;
   border: none;
   background: transparent;
@@ -338,13 +591,19 @@ body {
 .team-avatar-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  background: var(--vscode-editor-background);
-  padding: 3px 6px 3px 3px;
-  border-radius: 12px;
-  font-size: 10px;
-  color: var(--vscode-foreground);
-  border: 1px solid var(--vscode-widget-border);
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px 8px 3px 3px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #d4d4d8;
+  border: none;
+  transition: var(--wk-transition);
+}
+
+.team-avatar-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 /* ── Main tabs (Tasks | Issues) ─────────────────────────── */
@@ -352,10 +611,10 @@ body {
 .main-tabs {
   display: flex;
   gap: 2px;
-  background: var(--vscode-input-background);
+  background: rgba(0, 0, 0, 0.2);
   border-radius: var(--wk-radius);
-  padding: 3px;
-  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .main-tab {
@@ -395,19 +654,19 @@ body {
 .item-card {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 10px;
+  padding: 12px 14px;
   border-radius: var(--wk-radius);
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, transparent);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   cursor: default;
   transition: var(--wk-transition);
   position: relative;
 }
 
 .item-card:hover {
-  background: var(--vscode-list-hoverBackground);
-  border-color: var(--vscode-focusBorder);
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .item-dot {
@@ -423,12 +682,20 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 8px;
+  padding-right: 34px;
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .item-title {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -440,6 +707,110 @@ body {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.item-status-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.item-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: transparent;
+  color: #d4d4d8;
+  border: 1px solid transparent;
+}
+
+.item-date {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.item-status {
+  border: none;
+  cursor: pointer;
+}
+
+.item-status:focus {
+  outline: none;
+}
+
+.status-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 140px;
+  background: #1f1f1f;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  z-index: 30;
+}
+
+.status-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.status-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.status-menu-item.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-weight: 600;
+}
+
+.item-pill-icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+
+.item-date .item-pill-icon {
+  color: #ffffff;
+  opacity: 1;
+}
+
+.item-assignees {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.item-assignees .mini-avatar,
+.item-assignees .mini-avatar-img {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.item-assignee-extra {
+  font-size: 10px;
+  margin-top: 4px;
+  color: #a3a3a3;
 }
 
 /* ── Status badges — slugified to match statusClass() helper ── */
@@ -529,7 +900,7 @@ body {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 25%;
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   font-size: 10px;
@@ -540,19 +911,17 @@ body {
 .mini-avatar-img {
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 25%;
   object-fit: cover;
   flex-shrink: 0;
 }
 
 .item-actions {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
   display: flex;
-  gap: 2px;
-  opacity: 0;
-  transition: var(--wk-transition);
-}
-
-.item-card:hover .item-actions {
+  gap: 6px;
   opacity: 1;
 }
 
@@ -568,12 +937,14 @@ body {
 .edit-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  background: var(--vscode-input-background);
+  gap: 12px;
+  padding: 14px;
+  background: #212121;
   border-radius: var(--wk-radius);
-  border: 1px solid var(--vscode-focusBorder);
-  animation: slideUp 150ms ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  margin-top: 4px;
+  margin-bottom: 8px;
 }
 
 .edit-panel-header {
@@ -615,21 +986,28 @@ body {
 
 .input,
 .select {
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-focusBorder));
-  color: var(--vscode-input-foreground);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
   border-radius: var(--wk-radius-sm);
-  padding: 5px 8px;
+  padding: 6px 10px;
   font-size: 12px;
   font-family: inherit;
   width: 100%;
   transition: var(--wk-transition);
 }
 
+.input:hover,
+.select:hover {
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
 .input:focus,
 .select:focus {
   outline: none;
-  border-color: var(--vscode-focusBorder);
+  border-color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
 }
 
 .select-sm {
@@ -657,21 +1035,54 @@ body {
 }
 
 .btn-primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: #3b82f6;
+  color: #ffffff;
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
 
 .btn-primary:hover {
-  background: var(--vscode-button-hoverBackground);
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+
+#btn-save-edit.btn-primary:hover,
+#btn-save-edit.btn-primary:active {
+  background: #3b82f6;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-new {
+  width: fit-content;
+  justify-content: flex-start;
+  padding: 4px 16px;
+  font-size: 12px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #e5e7eb;
+  box-shadow: none;
+}
+
+.btn-new:hover,
+.btn-new:active {
+  background: #ffffff;
+  color: #111827;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-ghost {
   background: transparent;
-  color: var(--vscode-foreground);
+  color: #a3a3a3;
+  border: 1px solid transparent;
 }
 
 .btn-ghost:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 .btn-sm {
@@ -700,6 +1111,7 @@ body {
 
 ::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -736,14 +1148,28 @@ body {
   font-size: 11px;
 }
 
+input[type="date"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.9;
+}
+
 .input-color {
   width: 36px;
   height: 30px;
-  border: 1px solid var(--vscode-input-border, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--wk-radius-sm);
-  background: none;
+  background: rgba(0, 0, 0, 0.2);
   cursor: pointer;
   padding: 2px;
+  transition: var(--wk-transition);
+}
+
+.input-color:hover {
+  border-color: rgba(255, 255, 255, 0.7);
 }
 
 /* ── Assignee Custom Dropdown ────────────────────────────── */
@@ -755,19 +1181,21 @@ body {
 .assignee-selected-display {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, transparent);
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--wk-radius-sm);
   cursor: pointer;
   font-size: 12px;
   transition: var(--wk-transition);
-  min-height: 28px;
+  min-height: 32px;
+  color: #fff;
 }
 
 .assignee-selected-display:hover {
-  border-color: var(--vscode-focusBorder);
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .assignee-dropdown {
@@ -775,12 +1203,12 @@ body {
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--vscode-dropdown-background, var(--vscode-input-background));
-  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border));
+  background: #212121;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--wk-radius-sm);
   z-index: 100;
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   max-height: 200px;
   overflow-y: auto;
 }
@@ -788,15 +1216,26 @@ body {
 .assignee-option {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 8px 10px;
   cursor: pointer;
   font-size: 12px;
   transition: background 0.1s;
+  color: #e4e4e7;
 }
 
 .assignee-option:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.assignee-selected-display .mini-avatar,
+.assignee-selected-display .mini-avatar-img,
+.assignee-option .mini-avatar,
+.assignee-option .mini-avatar-img,
+.item-assignees .mini-avatar,
+.item-assignees .mini-avatar-img {
+  border: 2px solid #ffffff;
 }
 
 .assignee-option.disabled {
@@ -860,23 +1299,27 @@ body {
 /* ── Interactive Color Picker ──────────────────────────────── */
 .tag-color-picker {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   margin-top: 6px;
   align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .color-dot {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
-  border: 2px solid transparent;
+  border: 2px solid rgba(255, 255, 255, 0.3);
   color: transparent;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: bold;
 }
 
@@ -885,9 +1328,10 @@ body {
 }
 
 .color-dot.active {
-  border-color: var(--vscode-sideBar-background);
-  box-shadow: 0 0 0 2px var(--vscode-focusBorder);
+  border-color: #1f1f1f;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
   color: #ffffff;
+  transform: scale(1.1);
 }
 
 /* ── Repository Structure Tree ──────────────────────────────── */
@@ -899,6 +1343,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.item-title {
+  font-size: 13px;
 }
 
 .tree-node {
