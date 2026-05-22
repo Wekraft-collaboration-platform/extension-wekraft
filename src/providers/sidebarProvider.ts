@@ -117,14 +117,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               msg.payload.projectId,
               msg.payload.sprintId
             ),
-          (data) => this._post({ type: "TASKS_LOADED", payload: data })
+          (data) => this._post({
+            type: "TASKS_LOADED",
+            payload: { tasks: data, epoch: msg.payload.epoch }
+          })
         );
         break;
 
       case "FETCH_ISSUES":
         await this._run(
           () => this.convexClient.getIssues(msg.payload.projectId),
-          (data) => this._post({ type: "ISSUES_LOADED", payload: data })
+          (data) => this._post({
+            type: "ISSUES_LOADED",
+            payload: { issues: data, epoch: msg.payload.epoch }
+          })
         );
         break;
 
@@ -219,9 +225,32 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const result = await op();
       onSuccess(result);
     } catch (err) {
+      console.error("Wekraft API Error:", err);
+      // LOW-02: Never forward raw internal error messages to the webview.
+      // They may contain Convex document IDs, stack traces, or server internals.
+      const raw = (err as Error).message ?? "";
+      const rawLower = raw.toLowerCase();
+      let userMessage = "An unexpected error occurred. Please try again.";
+      if (
+        rawLower.includes("not authenticated") || 
+        rawLower.includes("invalid") || 
+        rawLower.includes("revoked") ||
+        rawLower.includes("unauthorized") ||
+        rawLower.includes("expired")
+      ) {
+        userMessage = "Authentication failed. Please sign out and sign in again.";
+      } else if (rawLower.includes("rate limit")) {
+        userMessage = "Too many requests. Please wait a moment before retrying.";
+      } else if (rawLower.includes("forbidden")) {
+        userMessage = "Access denied: you do not have permission to perform this action.";
+      } else if (rawLower.includes("not found")) {
+        userMessage = "The requested item was not found.";
+      } else if (rawLower.includes("timed out")) {
+        userMessage = "The server took too long to respond. Check your connection.";
+      }
       this._post({
         type: "ERROR",
-        payload: { message: (err as Error).message ?? "Unknown error" },
+        payload: { message: userMessage },
       });
     }
   }
@@ -240,6 +269,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const nonce = this._nonce();
     const csp = [
       `default-src 'none'`,
+      // LOW-01: Removed 'unsafe-inline' — all styles in external sidebar.css
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `script-src 'nonce-${nonce}'`,
       `img-src ${webview.cspSource} https: data:`,
@@ -304,14 +334,32 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <!-- Project + Sprint selectors -->
     <div class="selectors">
       <div class="field">
-        <label class="label" for="select-project">Project</label>
-        <select id="select-project" class="select"></select>
+        <label class="label">Project</label>
+        <div class="wk-select-wrapper" id="wrapper-select-project">
+          <div class="wk-select-display" id="display-select-project">
+            <div class="wk-select-content">
+              <span class="wk-select-text">Loading projects...</span>
+              <span class="wk-select-icon"></span>
+            </div>
+            <svg class="wk-select-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="wk-select-dropdown hidden" id="dropdown-select-project"></div>
+          <input type="hidden" id="select-project" />
+        </div>
       </div>
       <div class="field">
-        <label class="label" for="select-sprint">Sprint</label>
-        <select id="select-sprint" class="select">
-          <option value="">All tasks</option>
-        </select>
+        <label class="label">Sprint</label>
+        <div class="wk-select-wrapper" id="wrapper-select-sprint">
+          <div class="wk-select-display" id="display-select-sprint">
+            <div class="wk-select-content">
+              <span class="wk-select-text">Loading sprints...</span>
+              <span class="wk-select-icon"></span>
+            </div>
+            <svg class="wk-select-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="wk-select-dropdown hidden" id="dropdown-select-sprint"></div>
+          <input type="hidden" id="select-sprint" />
+        </div>
       </div>
     </div>
 
@@ -328,12 +376,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     </div>
 
     <!-- Status filter tabs (shared by tasks & issues) -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin:4px 0;">
-      <div class="tabs" id="status-tabs" style="overflow-x:auto; white-space:nowrap; padding-bottom:4px; margin-bottom:-4px;">
+    <div class="status-bar">
+      <div class="tabs" id="status-tabs">
         <!-- Dynamically rendered based on activeView by sidebar.js -->
       </div>
-      <button id="btn-new-item" class="btn-icon" title="New Item" style="background:var(--vscode-button-background); color:var(--vscode-button-foreground); padding:2px 6px; border-radius:10px;">
+      <button id="btn-new-item" class="btn btn-new" title="New Item">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14m-7-7h14"/></svg>
+        <span id="btn-new-item-label">New Task</span>
       </button>
     </div>
 
@@ -356,25 +405,55 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       </div>
 
       <!-- Title -->
-      <input id="edit-title" class="input" type="text" placeholder="Title…" />
+      <div class="ep-field">
+        <input id="edit-title" class="input" type="text" placeholder="Title…" />
+      </div>
 
       <!-- Description -->
-      <textarea id="edit-description" class="input edit-textarea" placeholder="Description (optional)…" rows="2"></textarea>
+      <div class="ep-field">
+        <textarea id="edit-description" class="input edit-textarea" placeholder="Description (optional)…" rows="2"></textarea>
+      </div>
 
       <!-- Status + Priority -->
-      <div class="form-row">
-        <select id="edit-status" class="select select-sm"></select>
-        <select id="edit-priority" class="select select-sm"></select>
+      <div class="ep-row">
+        <div class="ep-field">
+          <label class="ep-label">Status</label>
+          <div class="wk-select-wrapper" id="wrapper-edit-status">
+            <div class="wk-select-display" id="display-edit-status">
+              <div class="wk-select-content">
+                <span class="wk-select-text">Select Status</span>
+                <span class="wk-select-icon"></span>
+              </div>
+              <svg class="wk-select-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="wk-select-dropdown hidden" id="dropdown-edit-status"></div>
+            <input type="hidden" id="edit-status" />
+          </div>
+        </div>
+        <div class="ep-field">
+          <label class="ep-label">Priority</label>
+          <div class="wk-select-wrapper" id="wrapper-edit-priority">
+            <div class="wk-select-display" id="display-edit-priority">
+              <div class="wk-select-content">
+                <span class="wk-select-text">Select Priority</span>
+                <span class="wk-select-icon"></span>
+              </div>
+              <svg class="wk-select-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="wk-select-dropdown hidden" id="dropdown-edit-priority"></div>
+            <input type="hidden" id="edit-priority" />
+          </div>
+        </div>
       </div>
 
       <!-- Assignee (with avatar) -->
-      <div class="field">
-        <label class="label">Assignee</label>
+      <div class="ep-field">
+        <label class="ep-label">Assignee</label>
         <div id="assignee-wrapper" class="assignee-select-wrapper">
           <div id="assignee-selected" class="assignee-selected-display">
-            <span class="mini-avatar" id="assignee-avatar-preview">?</span>
-            <span id="assignee-name-preview">Unassigned</span>
-            <svg style="margin-left:auto;flex-shrink:0;" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            <div id="assignee-avatar-preview" class="ep-avatar-stack"></div>
+            <span id="assignee-name-preview" style="flex:1;">Unassigned</span>
+            <svg style="flex-shrink:0;opacity:0.5;" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
           <div id="assignee-dropdown" class="assignee-dropdown hidden"></div>
         </div>
@@ -382,86 +461,86 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       </div>
 
       <!-- Dates (only shown for tasks) -->
-      <div id="task-dates" class="form-row">
-        <div class="field">
-          <label class="label">Start Date</label>
+      <div id="task-dates" class="ep-row">
+        <div class="ep-field">
+          <label class="ep-label">Start Date</label>
           <input id="edit-start-date" class="input input-sm" type="date" />
         </div>
-        <div class="field">
-          <label class="label">End Date</label>
+        <div class="ep-field">
+          <label class="ep-label">End Date</label>
           <input id="edit-end-date" class="input input-sm" type="date" />
         </div>
       </div>
 
       <!-- Dates (only shown for issues) -->
-      <div id="issue-due-date-row" class="field" style="margin-top: 8px;">
-        <label class="label">Due Date</label>
+      <div id="issue-due-date-row" class="ep-field" style="margin-top: 0;">
+        <label class="ep-label">Due Date</label>
         <input id="edit-due-date" class="input input-sm" type="date" />
       </div>
 
       <!-- Environment (only shown for issues) -->
-      <div id="issue-environment-row" class="field" style="margin-top: 8px;">
-        <label class="label">Environment</label>
-        <select id="edit-environment" class="select select-sm">
-          <option value="local">Local</option>
-          <option value="dev">Dev</option>
-          <option value="staging">Staging</option>
-          <option value="production">Production</option>
-        </select>
+      <div id="issue-environment-row" class="ep-field">
+        <label class="ep-label">Environment</label>
+        <div class="wk-select-wrapper" id="wrapper-edit-environment">
+          <div class="wk-select-display" id="display-edit-environment">
+            <div class="wk-select-content">
+              <span class="wk-select-text">Select Environment</span>
+              <span class="wk-select-icon"></span>
+            </div>
+            <svg class="wk-select-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="wk-select-dropdown hidden" id="dropdown-edit-environment"></div>
+          <input type="hidden" id="edit-environment" />
+        </div>
       </div>
 
       <!-- Tag / Type (only for tasks) -->
-      <div id="task-type-row" class="form-row" style="flex-direction: column; gap: 8px;">
-        <div class="field" style="width: 100%;">
-          <label class="label">Tag Label</label>
-          <input id="edit-type-label" class="input input-sm" type="text" placeholder="e.g. dashboard" maxlength="20" />
+      <div id="task-type-row" class="ep-field">
+        <label class="ep-label">Tag Label</label>
+        <input id="edit-type-label" class="input input-sm" type="text" placeholder="e.g. dashboard" maxlength="20" />
+        <label class="ep-label" style="margin-top:8px;">Tag Color</label>
+        <div class="tag-color-picker">
+          <span class="color-dot" data-color="green"  style="background:#10b981;" title="Green"></span>
+          <span class="color-dot" data-color="yellow" style="background:#eab308;" title="Yellow"></span>
+          <span class="color-dot" data-color="purple" style="background:#a855f7;" title="Purple"></span>
+          <span class="color-dot" data-color="blue"   style="background:#3b82f6;" title="Blue"></span>
+          <span class="color-dot" data-color="grey"   style="background:#737373;" title="Grey"></span>
         </div>
-        <div class="field" style="width: 100%;">
-          <label class="label">Select Color</label>
-          <div class="tag-color-picker">
-            <span class="color-dot" data-color="green"  style="background-color:#10b981;" title="Green"></span>
-            <span class="color-dot" data-color="yellow" style="background-color:#eab308;" title="Yellow"></span>
-            <span class="color-dot" data-color="purple" style="background-color:#a855f7;" title="Purple"></span>
-            <span class="color-dot" data-color="blue"   style="background-color:#3b82f6;" title="Blue"></span>
-            <span class="color-dot" data-color="grey"   style="background-color:#737373;" title="Grey"></span>
-          </div>
-          <input id="edit-type-color" type="hidden" value="blue" />
-        </div>
+        <input id="edit-type-color" type="hidden" value="blue" />
       </div>
 
       <!-- Link with Codebase (only for tasks) -->
-      <div id="task-link-row" class="field" style="margin-top: 12px; position: relative;">
-        <label class="label">Link with Codebase</label>
-        <div style="display: flex; gap: 6px; align-items: center;">
-          <input id="edit-link-codebase" class="input input-sm" type="text" placeholder="Select file from Repository Structure…" readonly style="flex: 1; background: var(--vscode-editor-inactiveSelectionBackground); cursor: pointer;" />
-          <button id="btn-clear-codebase" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 11px; height: 24px;" title="Clear codebase link">Clear</button>
+      <div id="task-link-row" class="ep-field" style="position: relative;">
+        <label class="ep-label">Link with Codebase</label>
+        <div class="ep-codebase-row">
+          <input id="edit-link-codebase" class="input input-sm ep-codebase-input" type="text" placeholder="Click to pick a file…" readonly />
+          <button id="btn-clear-codebase" class="ep-clear-btn" title="Clear">✕</button>
         </div>
-        
-        <div class="repo-structure-container hidden" id="repo-structure-container" style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
-          <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--vscode-descriptionForeground); margin-bottom: 4px;">Repository Structure</div>
-          <div id="repo-tree" style="font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; padding-right: 4px;">
+        <div class="repo-structure-container hidden" id="repo-structure-container" style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 1000; box-shadow: 0 4px 24px rgba(0,0,0,0.4);">
+          <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #71717a; margin-bottom: 6px;">Repository Structure</div>
+          <div id="repo-tree" style="font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; padding-right: 4px;">
             <!-- Tree nodes loaded dynamically -->
           </div>
         </div>
       </div>
 
       <!-- Blocked / Mark as Issue (only for tasks) -->
-      <div id="task-blocked-row" class="field" style="margin-top: 12px;">
-        <div class="blocked-row">
-          <label class="label" style="margin: 0; display: flex; align-items: center; gap: 6px;">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><rect width="8" height="14" x="8" y="5" rx="4"/><path d="M19 7a1 1 0 0 0-1-1h-2M18 11.66A8 8 0 0 0 16 10M20 18a4 4 0 0 0-4-3.5M5 7a1 1 0 0 1 1-1h2M6 11.66A8 8 0 0 1 8 10M4 18a4 4 0 0 1 4-3.5M9 5a3 3 0 0 1 6 0M12 19v3M20 15h2M2 15h2"/></svg>
-            Mark as Issue
-          </label>
-          <label class="toggle-switch">
-            <input type="checkbox" id="edit-is-blocked" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
+      <div id="task-blocked-row" class="ep-toggle-row">
+        <label class="ep-label" style="margin:0; display:flex; align-items:center; gap:6px; color:#a3a3a3;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="14" x="8" y="5" rx="4"/><path d="M19 7a1 1 0 0 0-1-1h-2M18 11.66A8 8 0 0 0 16 10M20 18a4 4 0 0 0-4-3.5M5 7a1 1 0 0 1 1-1h2M6 11.66A8 8 0 0 1 8 10M4 18a4 4 0 0 1 4-3.5M9 5a3 3 0 0 1 6 0M12 19v3M20 15h2M2 15h2"/></svg>
+          Mark as Issue
+        </label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="edit-is-blocked" />
+          <span class="toggle-slider"></span>
+        </label>
       </div>
 
-      <div class="form-actions">
+      <div class="form-actions" style="padding-top: 4px;">
+        <button id="btn-close-edit-bottom" class="btn btn-ghost btn-sm" style="margin-right:auto;">Cancel</button>
         <button id="btn-save-edit" class="btn btn-primary btn-sm">Save changes</button>
       </div>
+
     </div>
 
   </div><!-- /screen-main -->
@@ -554,12 +633,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private _getGitRemoteOrigin(workspacePath: string): string | null {
     try {
-      const { execSync } = require("child_process");
-      const output = execSync("git config --get remote.origin.url", {
+      // MED-03: Use spawnSync with argument array instead of execSync with shell string.
+      // This avoids shell expansion and is not susceptible to command injection
+      // even if workspacePath contained special characters.
+      const { spawnSync } = require("child_process");
+      const result = spawnSync("git", ["config", "--get", "remote.origin.url"], {
         cwd: workspacePath,
+        encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
-      }).toString().trim();
-      return output || null;
+        timeout: 3000,
+      });
+      if (result.status !== 0 || result.error) return null;
+      return result.stdout?.trim() || null;
     } catch (e) {
       return null;
     }
@@ -733,11 +818,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private _nonce(): string {
-    const chars =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    return Array.from(
-      { length: 32 },
-      () => chars[Math.floor(Math.random() * chars.length)]
-    ).join("");
+    // HIGH-01: Use cryptographically secure random bytes, not Math.random().
+    // Math.random() is not cryptographically secure and could produce predictable
+    // nonces that undermine the Content Security Policy protection.
+    const crypto = require("crypto");
+    return crypto.randomBytes(16).toString("base64url");
   }
 }
