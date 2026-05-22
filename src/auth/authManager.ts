@@ -139,19 +139,16 @@ export class AuthManager {
                 });
                 if (meResponse.ok) {
                   const json = (await meResponse.json()) as {
-                    success: boolean;
-                    data?: {
-                      name: string;
-                      avatarUrl?: string;
-                      accountType?: string;
-                    };
-                    error?: string;
+                    id?: string;
+                    name?: string;
+                    avatarUrl?: string;
+                    accountType?: string;
                   };
-                  if (json.success && json.data) {
+                  if (json && json.name) {
                     result.user = {
-                      name: json.data.name,
-                      avatarUrl: json.data.avatarUrl ?? "",
-                      accountType: json.data.accountType || "free",
+                      name: json.name,
+                      avatarUrl: json.avatarUrl ?? "",
+                      accountType: json.accountType || "free",
                     };
                   }
                 }

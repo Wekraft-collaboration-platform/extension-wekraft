@@ -1,7 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-//  Wekraft Sidebar — Webview Script
+//  Wekraft Sidebar — Webview Script  (production-grade)
 //  Runs in the sandboxed webview browser context.
-//  No create allowed — only update and delete.
 // ─────────────────────────────────────────────────────────────
 // @ts-check
 
@@ -11,31 +10,34 @@ const vscode = acquireVsCodeApi();
 
 const state = {
   /** @type {{ isAuthenticated: boolean, user: any|null }} */
-  auth: { isAuthenticated: false, user: null },
+  auth:         { isAuthenticated: false, user: null },
   /** @type {"tasks"|"issues"} */
-  activeView: "tasks",
+  activeView:   "tasks",
   /** @type {string} */
   activeStatus: "all",
   /** @type {any[]} */
-  tasks: [],
+  tasks:        [],
   /** @type {any[]} */
-  projects: [],
+  projects:     [],
   /** @type {any[]} */
-  issues: [],
+  issues:       [],
   /** @type {any[]} */
-  teamMembers: [],
+  teamMembers:  [],
   /** @type {string} */
-  projectId: "",
+  projectId:    "",
   /** @type {string} */
-  sprintId: "",
+  sprintId:     "",
   /** @type {{ type: "task"|"issue", id: string }|null} */
-  editing: null,
-  /** @type {boolean} Track whether tasks have loaded at least once for current project */
-  tasksLoaded: false,
-  /** @type {boolean} Track whether issues have loaded at least once for current project */
-  issuesLoaded: false,
+  editing:      null,
   /** @type {boolean} */
   pendingMarkAsIssue: false,
+  /**
+   * Incremented on every loadAll(). Each fetch response carries the epoch
+   * it was launched in; stale responses from a previous epoch are discarded.
+   * This prevents a slow/failed API call from overwriting fresher data.
+   * @type {number}
+   */
+  fetchEpoch: 0,
 };
 
 // ── Tag colour map — matches web-app named tokens exactly ─────
@@ -43,10 +45,41 @@ const state = {
 const TAG_COLOR_MAP = {
   green:  { bg: "rgba(16,185,129,0.15)",  text: "#10b981", border: "rgba(16,185,129,0.35)"  },
   yellow: { bg: "rgba(234,179,8,0.15)",   text: "#eab308", border: "rgba(234,179,8,0.35)"   },
-  purple: { bg: "rgba(139,92,246,0.15)",  text: "#a78bfa", border: "rgba(139,92,246,0.35)"  },
+  purple: { bg: "rgba(168,85,247,0.15)",  text: "#a855f7", border: "rgba(168,85,247,0.35)"  },
   blue:   { bg: "rgba(59,130,246,0.15)",  text: "#60a5fa", border: "rgba(59,130,246,0.35)"  },
   grey:   { bg: "rgba(115,115,115,0.15)", text: "#a3a3a3", border: "rgba(115,115,115,0.35)" },
 };
+
+// ── Dropdown Icons ────────────────────────────────────────────
+
+const ICONS = {
+  // Statuses
+  "not started": `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>`,
+  inprogress: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/></svg>`,
+  reviewing: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M4 8V4a2 2 0 0 1 2-2h4M4 16v4a2 2 0 0 0 2 2h4M16 4h4a2 2 0 0 1 2 2v4M16 20h4a2 2 0 0 0 2-2v-4"/><circle cx="12" cy="12" r="3"/><line x1="14.14" y1="14.14" x2="16.5" y2="16.5"/></svg>`,
+  testing: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>`,
+  completed: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+  "not opened": `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  opened: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  reopened: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  closed: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+  // Priorities
+  no_priority: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>`,
+  low: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+  medium: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+  high: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+  critical: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+  // Environments
+  local: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+  dev: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+  staging: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+  production: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+  project: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d4d4d8" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+  sprint: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d4d4d8" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+  task: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
+  issue: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><rect width="8" height="14" x="8" y="5" rx="4"/><path d="M19 7a1 1 0 0 0-1-1h-2M18 11.66A8 8 0 0 0 16 10M20 18a4 4 0 0 0-4-3.5M5 7a1 1 0 0 1 1-1h2M6 11.66A8 8 0 0 1 8 10M4 18a4 4 0 0 1 4-3.5M9 5a3 3 0 0 1 6 0M12 19v3M20 15h2M2 15h2"/></svg>`
+};
+
 
 // ── DOM references ────────────────────────────────────────────
 
@@ -56,35 +89,33 @@ const screenLogin   = $("screen-login");
 const screenLoading = $("screen-loading");
 const screenMain    = $("screen-main");
 
-const btnLogin  = $("btn-login");
-const btnLogout = $("btn-logout");
+const btnLogin   = $("btn-login");
+const btnLogout  = $("btn-logout");
 const userAvatar = $("user-avatar");
-const userName  = $("user-name");
-const userRole  = $("user-role");
+const userName   = $("user-name");
+const userRole   = $("user-role");
 
-const selectProject = /** @type {HTMLSelectElement} */ ($("select-project"));
-const selectSprint  = /** @type {HTMLSelectElement} */ ($("select-sprint"));
+const selectProject = /** @type {HTMLInputElement} */ ($("select-project"));
+const selectSprint  = /** @type {HTMLInputElement} */ ($("select-sprint"));
 
 const teamSection = $("team-section");
 const teamAvatars = $("team-avatars");
 
-const mainTabs    = document.querySelectorAll(".main-tab");
-const statusTabsEl = $("status-tabs");
-const btnNewItem  = $("btn-new-item");
+const mainTabs   = document.querySelectorAll(".main-tab");
+const btnNewItem = $("btn-new-item");
+const btnNewItemLabel = $("btn-new-item-label");
+const itemList   = $("item-list");
 
-const itemList = $("item-list");
-
-const editPanel      = $("edit-panel");
-const repoSearch     = $("repo-search");
-const repoTree       = $("repo-tree");
-let rawWorkspaceFiles = [];
-const editPanelTitle = $("edit-panel-title");
-const editTitle      = /** @type {HTMLInputElement} */ ($("edit-title"));
-const editStatus     = /** @type {HTMLSelectElement} */ ($("edit-status"));
-const editPriority   = /** @type {HTMLSelectElement} */ ($("edit-priority"));
-const editAssignee   = /** @type {HTMLSelectElement} */ ($("edit-assignee"));
-const btnSaveEdit    = $("btn-save-edit");
-const btnCloseEdit   = $("btn-close-edit");
+const editPanel       = $("edit-panel");
+const repoSearch      = $("repo-search");
+const repoTree        = $("repo-tree");
+let   rawWorkspaceFiles = [];
+const editPanelTitle  = $("edit-panel-title");
+const editTitle       = /** @type {HTMLInputElement} */   ($("edit-title"));
+const editStatus      = /** @type {HTMLInputElement} */ ($("edit-status"));
+const editPriority    = /** @type {HTMLInputElement} */ ($("edit-priority"));
+const btnSaveEdit     = $("btn-save-edit");
+const btnCloseEdit    = $("btn-close-edit");
 
 // ── Extension → Webview messages ─────────────────────────────
 
@@ -93,8 +124,8 @@ window.addEventListener("message", ({ data: msg }) => {
     case "AUTH_STATE":          onAuthState(msg.payload); break;
     case "PROJECTS_LOADED":     onProjectsLoaded(msg.payload); break;
     case "SPRINTS_LOADED":      onSprintsLoaded(msg.payload); break;
-    case "TASKS_LOADED":        onTasksLoaded(msg.payload); break;
-    case "ISSUES_LOADED":       onIssuesLoaded(msg.payload); break;
+    case "TASKS_LOADED":        onTasksLoaded(msg.payload.tasks, msg.payload.epoch); break;
+    case "ISSUES_LOADED":       onIssuesLoaded(msg.payload.issues, msg.payload.epoch); break;
     case "TEAM_MEMBERS_LOADED": onTeamLoaded(msg.payload); break;
     case "TASK_CREATED":        onTaskCreated(msg.payload); break;
     case "TASK_UPDATED":        onTaskUpdated(msg.payload); break;
@@ -124,26 +155,27 @@ function onAuthState(auth) {
   state.auth = auth;
   if (!auth.isAuthenticated) {
     // Full state reset
-    state.tasks         = [];
-    state.projects      = [];
-    state.issues        = [];
-    state.teamMembers   = [];
-    state.projectId     = "";
-    state.sprintId      = "";
-    state.editing       = null;
-    state.tasksLoaded   = false;
-    state.issuesLoaded  = false;
+    state.tasks        = [];
+    state.projects     = [];
+    state.issues       = [];
+    state.teamMembers  = [];
+    state.projectId    = "";
+    state.sprintId     = "";
+    state.editing      = null;
+    state.fetchEpoch   = 0;
 
     // DOM reset
-    userName.textContent   = "—";
-    userRole.textContent   = "FREE PLAN";
-    userRole.className     = "user-role plan-badge plan-free";
-    userAvatar.innerHTML   = "";
-    selectProject.innerHTML = "";
-    selectSprint.innerHTML = '<option value="">All tasks</option>';
-    teamSection.classList.add("hidden");
-    teamAvatars.innerHTML  = "";
-    itemList.innerHTML     = '<div class="empty-state">Select a project to load data.</div>';
+    if (userName)        userName.textContent    = "—";
+    if (userRole)        { userRole.textContent  = "FREE PLAN"; userRole.className = "user-role plan-badge plan-free"; }
+    if (userAvatar)      {
+      userAvatar.classList.remove("has-image");
+      userAvatar.innerHTML    = "";
+    }
+    if (selectProject)   setupCustomDropdown("select-project", []);
+    if (selectSprint)    setupCustomDropdown("select-sprint", [{ value: "", label: "All tasks", icon: "" }]);
+    if (teamSection)     teamSection.classList.add("hidden");
+    if (teamAvatars)     teamAvatars.innerHTML   = "";
+    if (itemList)        itemList.innerHTML       = '<div class="empty-state">Select a project to load data.</div>';
     closeEditPanel();
 
     showScreen("login");
@@ -151,172 +183,222 @@ function onAuthState(auth) {
   }
 
   const u = auth.user;
-  if (u) {
+  if (u && userName && userRole && userAvatar) {
     userName.textContent = u.name || "Member";
-    userRole.textContent = "MEMBER";
-    userRole.className   = "user-role plan-badge plan-member";
+
+    if (state.projects.length > 0) {
+      updateUserRoleForSelectedProject();
+    } else {
+      userRole.textContent = "MEMBER";
+      userRole.className   = "user-role plan-badge plan-member";
+    }
 
     if (u.avatarUrl) {
-      userAvatar.innerHTML = `<img src="${esc(u.avatarUrl)}" alt="Avatar" class="mini-avatar-img" style="width:32px;height:32px;border-radius:50%;" />`;
+      userAvatar.classList.add("has-image");
+      userAvatar.innerHTML = `<img src="${esc(u.avatarUrl)}" alt="Avatar" class="mini-avatar-img" style="width:48px;height:48px;border-radius:25%;" />`;
     } else {
-      userAvatar.innerHTML = `<span style="font-size:16px;">${esc((u.name || "?")[0].toUpperCase())}</span>`;
+      userAvatar.innerHTML = `<span style="font-size:18px;">${esc((u.name || "?")[0].toUpperCase())}</span>`;
     }
   }
-  showScreen("loading");
-  post({ type: "FETCH_PROJECTS" });
+
+  const hasLoadedProjectsOnce = state.projects.length > 0;
+  if (!hasLoadedProjectsOnce || (!screenLogin.classList.contains("hidden") && screenMain.classList.contains("hidden"))) {
+    showScreen("loading");
+    post({ type: "FETCH_PROJECTS" });
+  }
 }
 
 // ── Project / Sprint ──────────────────────────────────────────
 
 function onProjectsLoaded(projects) {
   state.projects = projects;
-  selectProject.innerHTML = "";
+  if (!selectProject) return;
 
-  if (!projects.length) {
-    selectProject.innerHTML = '<option value="">No projects</option>';
-    showScreen("main");
-    return;
+    const opts = projects.map((p) => ({
+    value: p.id || p._id || "",
+    label: p.name || p.projectName || "(unnamed)",
+    icon: ""
+  }));
+
+  if (opts.length === 0) {
+    opts.push({ value: "", label: "No projects", icon: "" });
   }
 
-  projects.forEach((p) => {
-    const opt = document.createElement("option");
-    opt.value       = p.id;
-    opt.textContent = p.name;
-    selectProject.appendChild(opt);
+  const currentOpts = opts.map(o => o.value);
+  if (!state.projectId || !currentOpts.includes(state.projectId)) {
+    const newVal = opts[0]?.value || "";
+    state.projectId = newVal;
+    const input = $("select-project");
+    if (input) input.value = newVal;
+  }
+
+  setupCustomDropdown("select-project", opts, (val) => {
+    state.projectId = val;
+    state.sprintId  = "";
+    if (selectSprint) selectSprint.value = "";
+    closeEditPanel();
+    updateUserRoleForSelectedProject();
+    loadAll();
   });
 
-  state.projectId    = projects[0].id;
-  state.tasksLoaded  = false;
-  state.issuesLoaded = false;
   updateUserRoleForSelectedProject();
   loadAll();
 }
 
 function onSprintsLoaded(sprints) {
-  selectSprint.innerHTML = '<option value="">All tasks</option>';
-  sprints.forEach((s) => {
-    const opt = document.createElement("option");
-    opt.value = s.id || s._id;
-    // Convex schema: sprintName (not name), status: "planned" | "active" | "completed"
-    const icon = s.status === "active"  ? "🟢 "
-                : s.status === "planned" ? "🔵 "
-                : "✓ ";
+  if (!selectSprint) return;
+  
+  const opts = (sprints || []).map((s) => {
+    const val = s.id || s._id || "";
     const label = s.sprintName || s.name || "(unnamed sprint)";
-    // Show date range alongside the name
+    const statusIcon = s.status === "active" ? "🟢" : s.status === "planned" ? "🔵" : "✓";
+    
     let dateRange = "";
     const start = s.duration?.startDate ?? s.startDate;
     const end   = s.duration?.endDate   ?? s.endDate;
     if (start && end) {
-      const fmt = (ts) => new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      const fmt = (/** @type {number} */ ts) =>
+        new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       dateRange = ` (${fmt(start)} – ${fmt(end)})`;
     }
-    opt.textContent = icon + label + dateRange;
-    selectSprint.appendChild(opt);
+    
+    return {
+      value: val,
+      label: `${statusIcon} ${label}${dateRange}`,
+      icon: ICONS.sprint
+    };
+  });
+
+  opts.unshift({ value: "", label: "All tasks", icon: "" });
+
+  const currentOpts = opts.map(o => o.value);
+  if (!state.sprintId || !currentOpts.includes(state.sprintId)) {
+    state.sprintId = "";
+    const input = $("select-sprint");
+    if (input) input.value = "";
+  }
+
+  setupCustomDropdown("select-sprint", opts, (val) => {
+    state.sprintId = val;
+    if (state.activeView === "tasks") {
+      state.tasks = [];
+      renderItems();
+      loadAll();
+    }
   });
 }
 
 function updateUserRoleForSelectedProject() {
   if (!state.projectId || !state.auth.user) return;
-  const currentProj = state.projects.find((p) => p.id === state.projectId);
-  if (!currentProj) return;
+  const currentProj = state.projects.find((p) =>
+    (p.id || p._id) === state.projectId
+  );
+  if (!currentProj || !userRole) return;
 
-  if (currentProj.ownerId === state.auth.user.id) {
+  const userId = state.auth.user.id || state.auth.user._id;
+  if (currentProj.ownerId === userId) {
     userRole.textContent = "OWNER";
     userRole.className   = "user-role plan-badge plan-owner";
   } else {
     const myMember = state.teamMembers.find(
-      (m) => m.userId === state.auth.user.id || m.user?.id === state.auth.user.id
+      (m) => m.userId === userId || m.user?.id === userId
     );
-    const role = myMember ? myMember.role || "member" : "member";
+    const role = myMember ? (myMember.role || "member") : "member";
     userRole.textContent = role.toUpperCase();
     userRole.className   = `user-role plan-badge plan-${role}`;
   }
 }
 
-function loadAll() {
-  if (!state.projectId) { return; }
-  state.tasksLoaded  = false;
-  state.issuesLoaded = false;
-  showScreen("loading");
-  post({ type: "FETCH_SPRINTS",       payload: { projectId: state.projectId } });
-  post({ type: "FETCH_TASKS",         payload: { projectId: state.projectId, sprintId: state.sprintId || undefined } });
-  post({ type: "FETCH_ISSUES",        payload: { projectId: state.projectId } });
-  post({ type: "FETCH_TEAM_MEMBERS",  payload: { projectId: state.projectId } });
+// ── Fetch epoch — prevents stale API responses from overwriting good data ──
+
+/**
+ * Start a new load cycle. Returns the epoch number for this cycle.
+ * Any response carrying a different epoch is silently discarded.
+ */
+function nextEpoch() {
+  state.fetchEpoch += 1;
+  return state.fetchEpoch;
 }
 
-function loadAllSilent() {
-  if (!state.projectId || !state.auth?.isAuthenticated) { return; }
+function loadAll() {
+  if (!state.projectId) return;
+  const epoch = nextEpoch();
+  showScreen("loading");
   post({ type: "FETCH_SPRINTS",      payload: { projectId: state.projectId } });
-  post({ type: "FETCH_TASKS",        payload: { projectId: state.projectId, sprintId: state.sprintId || undefined } });
-  post({ type: "FETCH_ISSUES",       payload: { projectId: state.projectId } });
+  post({ type: "FETCH_TASKS",        payload: { projectId: state.projectId, sprintId: state.sprintId || undefined, epoch } });
+  post({ type: "FETCH_ISSUES",       payload: { projectId: state.projectId, epoch } });
   post({ type: "FETCH_TEAM_MEMBERS", payload: { projectId: state.projectId } });
 }
 
-// Background polling — real-time sync with Convex
-setInterval(() => {
-  if (state.auth?.isAuthenticated && state.projectId && !state.editing) {
-    loadAllSilent();
-  }
-}, 5000);
+function loadAllSilent() {
+  if (!state.projectId || !state.auth?.isAuthenticated || state.editing) return;
+  // Silent polls do NOT change the epoch — they carry the current epoch.
+  // This means if a silent poll response is stale it will still overwrite,
+  // but we accept that tradeoff. The epoch only protects cross-loadAll races.
+  post({ type: "FETCH_TASKS",   payload: { projectId: state.projectId, sprintId: state.sprintId || undefined, epoch: state.fetchEpoch } });
+  post({ type: "FETCH_ISSUES",  payload: { projectId: state.projectId, epoch: state.fetchEpoch } });
+}
 
-selectProject.addEventListener("change", () => {
-  state.projectId    = selectProject.value;
-  state.sprintId     = "";
-  state.tasksLoaded  = false;
-  state.issuesLoaded = false;
-  selectSprint.value = "";
-  closeEditPanel();
-  updateUserRoleForSelectedProject();
-  loadAll();
-});
+// Background polling — real-time sync, 8s interval (not 5s — reduce server load at scale)
+setInterval(loadAllSilent, 8000);
 
-selectSprint.addEventListener("change", () => {
-  state.sprintId = selectSprint.value;
-  post({ type: "FETCH_TASKS", payload: { projectId: state.projectId, sprintId: state.sprintId || undefined } });
-});
+// Custom dropdowns handle their own onChange events.
 
 // ── Data handlers ─────────────────────────────────────────────
 
-function onTasksLoaded(tasks) {
-  state.tasks       = tasks;
-  state.tasksLoaded = true;
-  // Show immediately when viewing tasks, or once both have arrived
+/**
+ * @param {any[]} tasks
+ * @param {number|undefined} epoch
+ */
+function onTasksLoaded(tasks, epoch) {
+  // Discard stale responses from a superseded fetch cycle
+  if (epoch !== undefined && epoch !== state.fetchEpoch) return;
+  state.tasks = Array.isArray(tasks) ? tasks : [];
   if (state.activeView === "tasks") {
     renderItems();
     showScreen("main");
-  } else if (state.issuesLoaded) {
-    // The other tab's data is already there — just reveal main without flicker
-    showScreen("main");
+  } else {
+    // Background — just update data; render on tab switch
+    // But also show main if we were on loading screen
+    if (screenLoading && !screenLoading.classList.contains("hidden")) {
+      showScreen("main");
+    }
   }
 }
 
-function onIssuesLoaded(issues) {
-  state.issues       = issues;
-  state.issuesLoaded = true;
+/**
+ * @param {any[]} issues
+ * @param {number|undefined} epoch
+ */
+function onIssuesLoaded(issues, epoch) {
+  if (epoch !== undefined && epoch !== state.fetchEpoch) return;
+  state.issues = Array.isArray(issues) ? issues : [];
   if (state.activeView === "issues") {
     renderItems();
     showScreen("main");
-  } else if (state.tasksLoaded) {
-    // Tasks are ready; safe to show main
-    showScreen("main");
+  } else {
+    if (screenLoading && !screenLoading.classList.contains("hidden")) {
+      showScreen("main");
+    }
   }
 }
 
 function onTeamLoaded(members) {
-  state.teamMembers = members;
-  buildAvatarAssigneeSelect([]);
+  state.teamMembers = Array.isArray(members) ? members : [];
   updateUserRoleForSelectedProject();
 
-  if (members.length > 0) {
+  if (!teamSection || !teamAvatars) return;
+
+  if (state.teamMembers.length > 0) {
     teamSection.classList.remove("hidden");
-    teamAvatars.innerHTML = members.map((m) => {
+    teamAvatars.innerHTML = state.teamMembers.map((m) => {
       const initial    = (m.user?.name || "?")[0].toUpperCase();
       const roleBadge  = m.role === "admin" || m.role === "owner" ? "👑 " : "";
       const avatarHtml = m.user?.avatarUrl
         ? `<img src="${esc(m.user.avatarUrl)}" class="mini-avatar-img" />`
         : `<span class="mini-avatar">${esc(initial)}</span>`;
 
-      return `<div class="team-avatar-item" title="${esc(m.user?.name || "")} (${m.role})">
+      return `<div class="team-avatar-item" title="${esc(m.user?.name || "")} (${m.role || ""})">
                 ${avatarHtml}
                 <span>${roleBadge}${esc(m.user?.name || "")}</span>
               </div>`;
@@ -324,79 +406,105 @@ function onTeamLoaded(members) {
   } else {
     teamSection.classList.add("hidden");
   }
+  // Rebuild assignee dropdown only if edit panel is open
+  if (state.editing) {
+    const assigneeEl = $("edit-assignee");
+    if (assigneeEl) {
+      let cur = [];
+      try { cur = JSON.parse(assigneeEl.value || "[]"); } catch (e) { cur = []; }
+      buildAvatarAssigneeSelect(cur);
+    }
+  }
 }
 
 function onTaskCreated(task) {
+  if (!task) return;
   state.tasks = [task, ...state.tasks];
-  if (state.activeView === "tasks") { renderItems(); }
+  if (state.activeView === "tasks") renderItems();
   closeEditPanel();
 
   if (state.pendingMarkAsIssue) {
     state.pendingMarkAsIssue = false;
-    post({ type: "MARK_TASK_AS_ISSUE", payload: { taskId: task.id } });
+    post({ type: "MARK_TASK_AS_ISSUE", payload: { taskId: task.id || task._id } });
   }
 }
 
 function onTaskUpdated(task) {
-  state.tasks = state.tasks.map((t) => (t.id === task.id ? task : t));
-  renderItems();
+  if (!task) return;
+  const id = task.id || task._id;
+  state.tasks = state.tasks.map((t) => ((t.id || t._id) === id ? task : t));
+  if (state.activeView === "tasks") renderItems();
   closeEditPanel();
 }
 
 function onTaskDeleted(taskId) {
-  state.tasks = state.tasks.filter((t) => t.id !== taskId);
-  renderItems();
+  if (!taskId) return;
+  state.tasks = state.tasks.filter((t) => (t.id || t._id) !== taskId);
+  if (state.activeView === "tasks") renderItems();
 }
 
 function onIssueCreated(issue) {
+  if (!issue) return;
   state.issues = [issue, ...state.issues];
-  if (state.activeView === "issues") { renderItems(); }
+  if (state.activeView === "issues") renderItems();
   closeEditPanel();
 }
 
 function onIssueUpdated(issue) {
-  state.issues = state.issues.map((i) => (i.id === issue.id ? issue : i));
+  if (!issue) return;
+  const id = issue.id || issue._id;
+  state.issues = state.issues.map((i) => ((i.id || i._id) === id ? issue : i));
 
   if (issue.taskId && issue.status === "closed") {
     state.tasks = state.tasks.map((t) =>
-      t.id === issue.taskId ? { ...t, isBlocked: false } : t
+      (t.id || t._id) === issue.taskId ? { ...t, isBlocked: false } : t
     );
   }
-
   renderItems();
   closeEditPanel();
 }
 
 function onIssueDeleted(issueId) {
-  const issue = state.issues.find((i) => i.id === issueId);
+  if (!issueId) return;
+  const issue = state.issues.find((i) => (i.id || i._id) === issueId);
   if (issue?.taskId) {
     state.tasks = state.tasks.map((t) =>
-      t.id === issue.taskId ? { ...t, isBlocked: false } : t
+      (t.id || t._id) === issue.taskId ? { ...t, isBlocked: false } : t
     );
   }
-
-  state.issues = state.issues.filter((i) => i.id !== issueId);
+  state.issues = state.issues.filter((i) => (i.id || i._id) !== issueId);
   renderItems();
 }
 
 // ── Render ────────────────────────────────────────────────────
 
 function renderItems() {
+  if (!itemList) return;
   const items    = state.activeView === "tasks" ? state.tasks : state.issues;
   const filtered = state.activeStatus === "all"
     ? items
     : items.filter((i) => i.status === state.activeStatus);
+
+  if (editPanel && editPanel.parentNode === itemList) {
+    const screenMain = document.getElementById("screen-main");
+    if (screenMain) screenMain.appendChild(editPanel);
+  }
 
   if (!filtered.length) {
     itemList.innerHTML = `<div class="empty-state">No ${state.activeView} found.</div>`;
     return;
   }
 
+  if (editPanel && editPanel.parentNode === itemList) {
+    const screenMain = document.getElementById("screen-main");
+    if (screenMain) screenMain.appendChild(editPanel);
+  }
+
   itemList.innerHTML = filtered.map((item) => itemCardHtml(item)).join("");
 
   itemList.querySelectorAll(".item-card").forEach((card) => {
-    const id   = card.getAttribute("data-id");
-    const type = /** @type {"task"|"issue"} */ (card.getAttribute("data-type"));
+    const id   = card.getAttribute("data-id") || "";
+    const type = /** @type {"task"|"issue"} */ (card.getAttribute("data-type") || "task");
 
     card.querySelector(".btn-edit")?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -407,14 +515,34 @@ function renderItems() {
       e.stopPropagation();
       confirmDelete(type, id);
     });
+
+    card.querySelector(".item-status")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wrap = /** @type {HTMLElement|null} */ (card.querySelector(".item-status-wrap"));
+      const currentStatus = /** @type {HTMLElement} */ (e.currentTarget).getAttribute("data-status") || "";
+      if (!wrap) return;
+      if (activeStatusWrap === wrap) {
+        closeStatusMenu();
+        return;
+      }
+      openStatusMenu(wrap, type, id, currentStatus);
+    });
+
+    card.addEventListener("click", (e) => {
+      const target = /** @type {HTMLElement} */ (e.target);
+      if (target.closest(".btn-edit") || target.closest(".btn-delete") || target.closest(".status-menu")) return;
+      const wrap = /** @type {HTMLElement|null} */ (card.querySelector(".item-status-wrap"));
+      const statusEl = /** @type {HTMLElement|null} */ (card.querySelector(".item-status"));
+      const currentStatus = statusEl?.getAttribute("data-status") || "";
+      if (!wrap) return;
+      openStatusMenu(wrap, type, id, currentStatus);
+    });
   });
 }
 
-// ── Tag rendering helper ──────────────────────────────────────
+// ── Tag badge helper ──────────────────────────────────────────
 
 /**
- * Render a tag badge. Supports both named-token colors (web-app format)
- * and legacy hex values.
  * @param {{ label: string, color: string }|null|undefined} tag
  */
 function tagBadgeHtml(tag) {
@@ -423,24 +551,131 @@ function tagBadgeHtml(tag) {
   if (c) {
     return `<span style="font-size:9px;padding:2px 5px;border-radius:4px;margin-left:6px;background:${c.bg};color:${c.text};border:1px solid ${c.border};">${esc(tag.label)}</span>`;
   }
-  // Fallback: treat color as hex
-  const hex = tag.color || "#6366f1";
-  return `<span style="font-size:9px;padding:2px 5px;border-radius:4px;margin-left:6px;background:${esc(hex)}22;color:${esc(hex)};border:1px solid ${esc(hex)}44;">${esc(tag.label)}</span>`;
+  // Fallback: legacy hex color — HIGH-03 SECURITY: validate strictly before CSS injection.
+  // esc() escapes HTML entities but NOT CSS values. A crafted tag.color like
+  // "; color:red; background:url(x)" would break out of the style attribute.
+  const HEX_REGEX = /^#[0-9a-fA-F]{3,6}$/;
+  const rawColor = tag.color || "";
+  const hex = HEX_REGEX.test(rawColor) ? rawColor : "#6366f1";  // safe fallback
+  return `<span style="font-size:9px;padding:2px 5px;border-radius:4px;margin-left:6px;background:${hex}22;color:${hex};border:1px solid ${hex}44;">${esc(tag.label)}</span>`;
+
 }
 
-// ── Status badge CSS class — safe slugify ─────────────────────
+// ── Status badge slugify ──────────────────────────────────────
 
-/**
- * Convert a status string to a valid CSS class suffix.
- * e.g. "not started" → "not-started", "inprogress" → "inprogress"
- * @param {string} status
- */
+/** @param {string} status */
 function statusClass(status) {
-  return (status || "").replace(/\s+/g, "-").toLowerCase();
+  return (status || "").replace(/[\s_]+/g, "-").toLowerCase();
 }
+
+const STATUS_LABELS = {
+  "not started": "Not Started",
+  inprogress: "In Progress",
+  reviewing: "Reviewing",
+  testing: "Testing",
+  completed: "Completed",
+  "not opened": "Not Opened",
+  opened: "Opened",
+  reopened: "Reopened",
+  closed: "Closed",
+};
+
+let activeStatusMenu = null;
+let activeStatusWrap = null;
+
+function formatStatusLabel(status) {
+  return STATUS_LABELS[status] || (status || "").replace(/_/g, " ");
+}
+
+function formatShortDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function formatDateRange(startTs, endTs) {
+  const startDate = startTs ? new Date(startTs) : null;
+  const endDate = endTs ? new Date(endTs) : null;
+  if (startDate && Number.isNaN(startDate.getTime())) return "";
+  if (endDate && Number.isNaN(endDate.getTime())) return "";
+
+  if (startDate && endDate) {
+    const sameMonth = startDate.getMonth() === endDate.getMonth() && startDate.getFullYear() === endDate.getFullYear();
+    const startMonth = startDate.toLocaleDateString("en-US", { month: "short" });
+    const endMonth = endDate.toLocaleDateString("en-US", { month: "short" });
+    const startDay = startDate.getDate();
+    const endDay = endDate.getDate();
+    if (sameMonth) {
+      if (startDay === endDay) return `${startMonth} ${startDay}`;
+      return `${startMonth} ${startDay}-${endDay}`;
+    }
+    return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+  }
+
+  return formatShortDate(startTs) || formatShortDate(endTs) || "No date";
+}
+
+function closeStatusMenu() {
+  if (activeStatusMenu) {
+    activeStatusMenu.remove();
+    activeStatusMenu = null;
+    activeStatusWrap = null;
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (activeStatusMenu && activeStatusWrap) {
+    if (!activeStatusWrap.contains(/** @type {Node} */ (e.target))) {
+      closeStatusMenu();
+    }
+  }
+});
+
+function updateItemStatus(type, id, status) {
+  if (type === "task") {
+    state.tasks = state.tasks.map((t) => ((t.id || t._id) === id ? { ...t, status } : t));
+    post({ type: "UPDATE_TASK", payload: { taskId: id, status } });
+  } else {
+    state.issues = state.issues.map((i) => ((i.id || i._id) === id ? { ...i, status } : i));
+    post({ type: "UPDATE_ISSUE", payload: { issueId: id, status } });
+  }
+  renderItems();
+}
+
+function openStatusMenu(wrap, type, id, currentStatus) {
+  closeStatusMenu();
+  const statuses = type === "issue" ? ISSUE_STATUSES : TASK_STATUSES;
+  const menu = document.createElement("div");
+  menu.className = "status-menu";
+  menu.innerHTML = statuses.map((s) => {
+    const iconHtml = ICONS[s] ? `<span style="opacity:0.8;display:flex;">${ICONS[s]}</span>` : "";
+    return `<button type="button" class="status-menu-item${s === currentStatus ? " active" : ""}" data-status="${esc(s)}">
+      <span style="flex:1;text-align:left;">${esc(formatStatusLabel(s))}</span>${iconHtml}
+    </button>`;
+  }).join("");
+
+  menu.querySelectorAll(".status-menu-item").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const newStatus = /** @type {HTMLElement} */ (btn).getAttribute("data-status") || "";
+      if (newStatus && newStatus !== currentStatus) {
+        updateItemStatus(type, id, newStatus);
+      }
+      closeStatusMenu();
+    });
+  });
+
+  wrap.appendChild(menu);
+  activeStatusMenu = menu;
+  activeStatusWrap = wrap;
+}
+
+// ── Item card HTML ────────────────────────────────────────────
 
 function itemCardHtml(item) {
   const isIssue = state.activeView === "issues";
+  const itemId  = item.id || item._id || "";
 
   const priorityColors = {
     urgent:      "var(--priority-urgent)",
@@ -450,60 +685,74 @@ function itemCardHtml(item) {
     low:         "var(--priority-low)",
     no_priority: "var(--priority-none)",
   };
-  const dotColor   = priorityColors[item.priority] ?? "var(--priority-none)";
-  const statusLabel = (item.status || "").replace(/_/g, " ");
+  const dotColor    = priorityColors[item.priority] ?? "var(--priority-none)";
+  const statusLabel = formatStatusLabel(item.status);
   const statusCls   = `badge-${statusClass(item.status)}`;
 
-  const renderAssigneesHtml = (assignees) => {
+  const renderAssigneesHtml = (/** @type {any[]} */ assignees) => {
     if (!assignees || assignees.length === 0) return "";
-    let html = `<div style="display:flex;align-items:center;" class="item-assignee">`;
     const maxShow = 3;
-    assignees.slice(0, maxShow).forEach((a, idx) => {
+    const itemsHtml = assignees.slice(0, maxShow).map((a, idx) => {
       const z = maxShow - idx;
-      if (a.avatarUrl) {
-        html += `<img src="${esc(a.avatarUrl)}" class="mini-avatar-img" style="width:16px;height:16px;border-radius:50%;border:1px solid var(--vscode-sideBar-background);margin-left:${idx > 0 ? "-6px" : "0"};z-index:${z};position:relative;" />`;
-      } else {
-        const initial = (a.name || "?")[0].toUpperCase();
-        html += `<span class="mini-avatar" style="width:16px;height:16px;font-size:8px;border:1px solid var(--vscode-sideBar-background);margin-left:${idx > 0 ? "-6px" : "0"};z-index:${z};position:relative;flex-shrink:0;">${esc(initial)}</span>`;
+      const ml = idx > 0 ? "-6px" : "0";
+      const name = a.name || a.user?.name || "Member";
+      const avatar = a.avatarUrl || a.avatar || "";
+      if (avatar) {
+        return `<img src="${esc(avatar)}" class="mini-avatar-img" style="margin-left:${ml};z-index:${z};" title="${esc(name)}" />`;
       }
-    });
-    if (assignees.length > maxShow) {
-      html += `<span style="font-size:9px;margin-left:4px;opacity:0.8;">+${assignees.length - maxShow}</span>`;
-    } else if (assignees.length === 1) {
-      html += `<span style="font-size:10px;margin-left:4px;opacity:0.8;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(assignees[0].name || "")}</span>`;
-    }
-    html += `</div>`;
-    return html;
+      const initial = (name || "?")[0].toUpperCase();
+      return `<span class="mini-avatar" style="margin-left:${ml};z-index:${z};" title="${esc(name)}">${esc(initial)}</span>`;
+    }).join("");
+
+    const extra = assignees.length > maxShow
+      ? `<span class="item-assignee-extra">+${assignees.length - maxShow}</span>`
+      : "";
+
+    return `<div class="item-assignees">${itemsHtml}${extra}</div>`;
   };
 
-  const assigneesList = item.assignees?.length > 0 ? item.assignees : (item.assignee ? [item.assignee] : []);
+  const assigneesList = Array.isArray(item.assignees) && item.assignees.length > 0
+    ? item.assignees
+    : (item.assignee ? [item.assignee] : []);
+
+  const st = item.estimation?.startDate || item.duration?.startDate || item.startDate || item.start_date;
+  const en = item.estimation?.endDate || item.duration?.endDate || item.endDate || item.end_date || item.dueDate || item.due_date;
+
+  const dateLabel = isIssue
+    ? (formatShortDate(en || st) || "No date")
+    : formatDateRange(st, en);
+  const dateHtml = dateLabel ? `<span class="item-pill item-date">
+            <svg class="item-pill-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            ${esc(dateLabel)}
+          </span>` : "";
 
   return /* html */ `
-    <div class="item-card" data-id="${item.id}" data-type="${isIssue ? "issue" : "task"}">
-      <div class="item-dot" style="background:${dotColor}"></div>
+    <div class="item-card" data-id="${esc(itemId)}" data-type="${isIssue ? "issue" : "task"}">
       <div class="item-body">
-        <div class="item-title" title="${esc(item.title)}">
-          ${item.isBlocked ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;display:inline-block;"><rect width="8" height="14" x="8" y="5" rx="4"/><path d="M19 7a1 1 0 0 0-1-1h-2M18 11.66A8 8 0 0 0 16 10M20 18a4 4 0 0 0-4-3.5M5 7a1 1 0 0 1 1-1h2M6 11.66A8 8 0 0 1 8 10M4 18a4 4 0 0 1 4-3.5M9 5a3 3 0 0 1 6 0M12 19v3M20 15h2M2 15h2"/></svg>` : ""}${esc(item.title)}
-          ${tagBadgeHtml(item.type)}
-          ${item.linkWithCodebase ? `<span title="Linked to: ${esc(item.linkWithCodebase)}" style="font-size:10px;margin-left:6px;opacity:0.6;">🔗</span>` : ""}
+        <div class="item-header">
+          <div class="item-title" title="${esc(item.title || "")}">
+            <span style="display:inline-flex;vertical-align:middle;margin-right:6px;">${(isIssue || item.isBlocked) ? ICONS.issue : ICONS.task}</span>
+            ${esc(item.title || "")}
+            ${item.linkWithCodebase ? `<span title="Linked: ${esc(item.linkWithCodebase)}" style="font-size:12px;margin-left:6px;opacity:0.6;">🔗</span>` : ""}
+          </div>
+          ${renderAssigneesHtml(assigneesList)}
         </div>
         <div class="item-meta">
-          <span class="task-badge ${statusCls}">${statusLabel}</span>
-          ${renderAssigneesHtml(assigneesList)}
-          ${!isIssue && item.estimation?.endDate
-            ? `<span class="item-assignee" style="margin-left:auto;opacity:0.8;">⏱ ${new Date(item.estimation.endDate).toLocaleDateString()}</span>`
-            : ""}
+          <div class="item-status-wrap">
+            <button type="button" class="item-pill item-status ${statusCls}" data-status="${esc(item.status || "")}">${esc(statusLabel || "Status")}</button>
+          </div>
+          ${dateHtml}
         </div>
       </div>
       <div class="item-actions">
         <button class="btn-icon btn-edit" title="Edit">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
             <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
           </svg>
         </button>
         <button class="btn-icon btn-delete" title="Delete">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"/>
             <path d="M19 6l-1 14H6L5 6"/>
             <path d="M10 11v6M14 11v6"/>
@@ -516,55 +765,129 @@ function itemCardHtml(item) {
 
 // ── Inline edit panel ─────────────────────────────────────────
 
-const TASK_STATUSES   = ["not started", "inprogress", "reviewing", "testing", "completed"];
-const ISSUE_STATUSES  = ["not opened", "opened", "reopened", "closed"];
-const TASK_PRIORITIES = ["high", "medium", "low"];
-const ISSUE_PRIORITIES = ["critical", "medium", "low"];
+const TASK_STATUSES    = ["not started", "inprogress", "reviewing", "testing", "completed"];
+const ISSUE_STATUSES   = ["not opened", "opened", "reopened", "closed"];
+const TASK_PRIORITIES  = ["no_priority", "high", "medium", "low"];
+const ISSUE_PRIORITIES = ["no_priority", "critical", "high", "medium", "low"];
+const ENVIRONMENTS     = ["local", "dev", "staging", "production"];
 
-// Named colour options — matches web-app exactly
-const TAG_COLOR_OPTIONS = [
-  { name: "green",  hex: "#10b981" },
-  { name: "yellow", hex: "#eab308" },
-  { name: "purple", hex: "#a78bfa" },
-  { name: "blue",   hex: "#60a5fa" },
-  { name: "grey",   hex: "#a3a3a3" },
-];
+// ── Custom Dropdown Engine ─────────────────────────────────────────────
+
+/**
+ * Sets up a fully custom dark-themed dropdown bound to a hidden <input>.
+ * @param {string} id - The id of the hidden input element (e.g. "edit-status")
+ * @param {{ value: string, label: string, icon: string }[]} options
+ * @param {((val: string) => void) | undefined} [onChange]
+ */
+function setupCustomDropdown(id, options, onChange) {
+  const wrapper    = $("wrapper-" + id);
+  const display    = $("display-" + id);
+  const dropdown   = $("dropdown-" + id);
+  const hiddenInput = /** @type {HTMLInputElement|null} */ ($(id));
+
+  if (!wrapper || !display || !dropdown || !hiddenInput) return;
+
+  const textEl = display.querySelector(".wk-select-text");
+  const iconEl = display.querySelector(".wk-select-icon");
+
+  const renderSelected = () => {
+    const currentVal = hiddenInput.value;
+    const opt = options.find((o) => o.value === currentVal) || options[0];
+    if (opt) {
+      if (textEl) textEl.textContent = opt.label;
+      if (iconEl) iconEl.innerHTML = opt.icon || "";
+    }
+  };
+
+  const renderDropdown = () => {
+    dropdown.innerHTML = options.map((opt) => {
+      const isSelected = hiddenInput.value === opt.value;
+      return `<div class="wk-select-option${isSelected ? " selected" : ""}" data-val="${esc(opt.value)}">` +
+        `<span class="wk-select-option-label">${esc(opt.label)}</span>` +
+        (opt.icon ? `<span class="wk-select-icon">${opt.icon}</span>` : "") +
+        `</div>`;
+    }).join("");
+
+    dropdown.querySelectorAll(".wk-select-option").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const newVal = /** @type {HTMLElement} */ (el).getAttribute("data-val") || "";
+        hiddenInput.value = newVal;
+        renderSelected();
+        display.classList.remove("open");
+        dropdown.classList.add("hidden");
+        if (onChange) onChange(newVal);
+      });
+    });
+  };
+
+  display.onclick = (e) => {
+    e.stopPropagation();
+    const isOpen = !dropdown.classList.contains("hidden");
+    // Close all other open dropdowns
+    document.querySelectorAll(".wk-select-display.open").forEach((el) => el.classList.remove("open"));
+    document.querySelectorAll(".wk-select-dropdown").forEach((el) => el.classList.add("hidden"));
+    if (!isOpen) {
+      display.classList.add("open");
+      renderDropdown();
+      dropdown.classList.remove("hidden");
+    }
+  };
+
+  renderSelected();
+}
+
+// Global click closes any open custom dropdown and wk-card menus
+document.addEventListener("click", () => {
+  document.querySelectorAll(".wk-select-display.open").forEach((el) => el.classList.remove("open"));
+  document.querySelectorAll(".wk-select-dropdown").forEach((el) => el.classList.add("hidden"));
+});
+
 
 function openEditPanel(type, id) {
+  if (!editTitle || !btnSaveEdit || !editPanel || !editPanelTitle) return;
   editTitle.disabled   = false;
   btnSaveEdit.disabled = false;
 
   let item = null;
   if (id) {
     item = type === "task"
-      ? state.tasks.find((t) => t.id === id)
-      : state.issues.find((i) => i.id === id);
+      ? state.tasks.find((t) => (t.id || t._id) === id)
+      : state.issues.find((i) => (i.id || i._id) === id);
     if (!item) return;
   }
 
-  state.editing = { type, id };
+  state.editing = { type, id: id || "" };
   editPanelTitle.textContent = !id
     ? (type === "task" ? "New Task" : "New Issue")
     : (type === "task" ? "Edit Task" : "Edit Issue");
 
-  // Populate status select
+  if (!editStatus || !editPriority) return;
+
   const statuses = type === "task" ? TASK_STATUSES : ISSUE_STATUSES;
-  editStatus.innerHTML = statuses.map((s) =>
-    `<option value="${s}" ${item?.status === s ? "selected" : ""}>${s.replace(/_/g, " ")}</option>`
-  ).join("");
+  const statusOpts = statuses.map((s) => ({
+    value: s,
+    label: s.replace(/_/g, " "),
+    icon: ICONS[s] || ""
+  }));
+  const currentStatus = item?.status || statuses[0];
+  editStatus.value = currentStatus;
+  setupCustomDropdown("edit-status", statusOpts);
 
-  // Populate priority select
   const priorities = type === "task" ? TASK_PRIORITIES : ISSUE_PRIORITIES;
-  editPriority.innerHTML = priorities.map((p) =>
-    `<option value="${p}" ${item?.priority === p ? "selected" : ""}>${p}</option>`
-  ).join("");
+  const priorityOpts = priorities.map((p) => ({
+    value: p,
+    label: p === "no_priority" ? "None" : p.charAt(0).toUpperCase() + p.slice(1),
+    icon: ICONS[p] || ""
+  }));
+  const currentPriority = item?.priority || priorities[0];
+  editPriority.value = currentPriority;
+  setupCustomDropdown("edit-priority", priorityOpts);
 
-  // Title & description
   editTitle.value = item?.title ?? "";
   const descEl = $("edit-description");
-  if (descEl) descEl.value = item?.description ?? "";
+  if (descEl) /** @type {HTMLTextAreaElement} */ (descEl).value = item?.description ?? "";
 
-  // Task-specific & Issue-specific fields
   const isTask             = type === "task";
   const taskDates          = $("task-dates");
   const taskTypeRow        = $("task-type-row");
@@ -581,16 +904,15 @@ function openEditPanel(type, id) {
   if (issueEnvironmentRow) issueEnvironmentRow.style.display = isTask ? "none" : "";
 
   if (isTask) {
-    const startEl = $("edit-start-date");
-    const endEl   = $("edit-end-date");
+    const startEl  = /** @type {HTMLInputElement|null} */ ($("edit-start-date"));
+    const endEl    = /** @type {HTMLInputElement|null} */ ($("edit-end-date"));
     const todayStr = new Date().toISOString().split("T")[0];
 
     if (startEl) {
-      startEl.min = todayStr;
-      startEl.readOnly = false;
+      startEl.min             = todayStr;
+      startEl.readOnly        = false;
       startEl.style.pointerEvents = "";
-      startEl.style.opacity = "";
-
+      startEl.style.opacity   = "";
       let startVal = todayStr;
       if (item?.estimation?.startDate) {
         const d = new Date(item.estimation.startDate).toISOString().split("T")[0];
@@ -604,79 +926,94 @@ function openEditPanel(type, id) {
       const nextDay   = new Date(startVal);
       nextDay.setDate(nextDay.getDate() + 1);
       const nextDayStr = nextDay.toISOString().split("T")[0];
-      endEl.min       = nextDayStr;
-
+      endEl.min = nextDayStr;
       let endVal = item?.estimation?.endDate
         ? new Date(item.estimation.endDate).toISOString().split("T")[0]
         : new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0];
-
       if (endVal <= startVal) endVal = nextDayStr;
       endEl.value = endVal;
     }
 
-    // Tag — pre-fill label and pick correct named colour dot
-    const typeLbl = $("edit-type-label");
+    const typeLbl = /** @type {HTMLInputElement|null} */ ($("edit-type-label"));
     if (typeLbl) typeLbl.value = item?.type?.label ?? "";
     selectTagColor(item?.type?.color ?? "blue");
 
-    const linkEl = $("edit-link-codebase");
+    const linkEl = /** @type {HTMLInputElement|null} */ ($("edit-link-codebase"));
     if (linkEl) linkEl.value = item?.linkWithCodebase ?? "";
 
-    const blockedEl = $("edit-is-blocked");
+    const blockedEl = /** @type {HTMLInputElement|null} */ ($("edit-is-blocked"));
     if (blockedEl) {
       blockedEl.checked  = !!item?.isBlocked;
       blockedEl.disabled = !!item?.isBlocked;
     }
   } else {
-    const dueDateEl = $("edit-due-date");
+    const dueDateEl = /** @type {HTMLInputElement|null} */ ($("edit-due-date"));
     if (dueDateEl) {
       dueDateEl.value = item?.due_date
         ? new Date(item.due_date).toISOString().split("T")[0]
         : "";
     }
+    const envOpts = ENVIRONMENTS.map((e) => ({
+      value: e,
+      label: e.charAt(0).toUpperCase() + e.slice(1),
+      icon: ICONS[e] || ""
+    }));
+    const envEl = /** @type {HTMLInputElement|null} */ ($("edit-environment"));
+    if (envEl) {
+      envEl.value = item?.environment ?? "local";
+      setupCustomDropdown("edit-environment", envOpts);
+    }
 
-    const envEl = $("edit-environment");
-    if (envEl) envEl.value = item?.environment ?? "local";
-
-    const linkEl = $("edit-link-codebase");
+    const linkEl = /** @type {HTMLInputElement|null} */ ($("edit-link-codebase"));
     if (linkEl) linkEl.value = item?.fileLinked ?? "";
   }
 
-  buildAvatarAssigneeSelect(
-    item?.assigneeIds?.length > 0 ? item.assigneeIds : (item?.assigneeId ? [item.assigneeId] : [])
-  );
+  const currentAssigneeIds = item?.assigneeIds?.length > 0
+    ? item.assigneeIds
+    : (item?.assigneeId ? [item.assigneeId] : []);
+  buildAvatarAssigneeSelect(currentAssigneeIds);
 
   if (repoSearch) repoSearch.value = "";
-
-  const activeProj   = state.projects.find((p) => p.id === state.projectId);
+  const activeProj   = state.projects.find((p) => (p.id || p._id) === state.projectId);
   const repoFullName = activeProj?.repoFullName || "";
   post({ type: "FETCH_REPO_STRUCTURE", payload: { repoFullName } });
 
   editPanel.classList.remove("hidden");
   editTitle.focus();
+
+  // Move inline below the clicked card
+  if (id) {
+    const cardEl = document.querySelector(`.item-card[data-id="${id}"]`);
+    if (cardEl) {
+      cardEl.insertAdjacentElement("afterend", editPanel);
+      editPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  } else {
+    if (itemList) {
+      itemList.prepend(editPanel);
+      editPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
 }
 
 function closeEditPanel() {
-  state.editing        = null;
-  editPanel.classList.add("hidden");
-  editTitle.disabled   = false;
-  btnSaveEdit.disabled = false;
+  state.editing = null;
+  if (editPanel)   editPanel.classList.add("hidden");
+  if (editTitle)   editTitle.disabled   = false;
+  if (btnSaveEdit) btnSaveEdit.disabled = false;
 }
 
 /**
- * Select a tag colour by its named token (e.g. "blue") or legacy hex.
- * Updates the hidden input and the colour dot UI.
+ * Select a tag colour by named token or legacy hex.
  * @param {string} colorNameOrHex
  */
 function selectTagColor(colorNameOrHex) {
-  const hiddenInput = $("edit-type-color");
+  const hiddenInput = /** @type {HTMLInputElement|null} */ ($("edit-type-color"));
   if (!hiddenInput) return;
   hiddenInput.value = colorNameOrHex;
 
-  const dots = document.querySelectorAll(".tag-color-picker .color-dot");
-  dots.forEach((dot) => {
-    const dotName = dot.getAttribute("data-color");
-    if (dotName === colorNameOrHex) {
+  document.querySelectorAll(".tag-color-picker .color-dot").forEach((dot) => {
+    if (dot.getAttribute("data-color") === colorNameOrHex) {
       dot.classList.add("active");
       dot.innerHTML = "✓";
     } else {
@@ -687,7 +1024,7 @@ function selectTagColor(colorNameOrHex) {
 }
 
 function saveEdit() {
-  if (!state.editing) { return; }
+  if (!state.editing || !editTitle || !editStatus || !editPriority) return;
   const { type, id } = state.editing;
 
   if (!editTitle.value.trim()) {
@@ -697,20 +1034,21 @@ function saveEdit() {
 
   const item = id
     ? (type === "task"
-        ? state.tasks.find((t) => t.id === id)
-        : state.issues.find((i) => i.id === id))
+        ? state.tasks.find((t) => (t.id || t._id) === id)
+        : state.issues.find((i) => (i.id || i._id) === id))
     : null;
 
-  const descEl    = $("edit-description");
-  const assigneeEl = $("edit-assignee");
+  const descEl    = /** @type {HTMLTextAreaElement|null} */ ($("edit-description"));
+  const assigneeEl = /** @type {HTMLInputElement|null} */ ($("edit-assignee"));
 
+  /** @type {Record<string, any>} */
   const payload = {
     title:       editTitle.value.trim(),
     description: descEl?.value?.trim() || undefined,
     status:      editStatus.value || undefined,
   };
 
-  let assigneeIds = [];
+  let assigneeIds = /** @type {string[]} */ ([]);
   if (assigneeEl?.value) {
     try { assigneeIds = JSON.parse(assigneeEl.value); } catch (e) { assigneeIds = []; }
   }
@@ -719,12 +1057,12 @@ function saveEdit() {
     payload.priority    = editPriority.value || undefined;
     payload.assigneeIds = assigneeIds;
 
-    const startEl   = $("edit-start-date");
-    const endEl     = $("edit-end-date");
-    const typeLbl   = $("edit-type-label");
-    const typeClr   = $("edit-type-color");
-    const linkEl    = $("edit-link-codebase");
-    const blockedEl = $("edit-is-blocked");
+    const startEl   = /** @type {HTMLInputElement|null} */ ($("edit-start-date"));
+    const endEl     = /** @type {HTMLInputElement|null} */ ($("edit-end-date"));
+    const typeLbl   = /** @type {HTMLInputElement|null} */ ($("edit-type-label"));
+    const typeClr   = /** @type {HTMLInputElement|null} */ ($("edit-type-color"));
+    const linkEl    = /** @type {HTMLInputElement|null} */ ($("edit-link-codebase"));
+    const blockedEl = /** @type {HTMLInputElement|null} */ ($("edit-is-blocked"));
 
     if (startEl?.value && endEl?.value) {
       const todayStr = new Date().toISOString().split("T")[0];
@@ -740,24 +1078,30 @@ function saveEdit() {
         endEl.focus();
         return;
       }
-      payload.estimation = { startDate: startT, endDate: endT };
+      if (item && ("startDate" in item || "start_date" in item)) {
+        payload.startDate = startT;
+        payload.endDate = endT;
+      } else if (item && "duration" in item) {
+        payload.duration = { startDate: startT, endDate: endT };
+      } else {
+        payload.estimation = { startDate: startT, endDate: endT };
+      }
     }
 
     const tagLabel = typeLbl?.value?.trim();
-    // Store color as named token — matches web-app format
-    payload.type = tagLabel ? { label: tagLabel, color: typeClr?.value ?? "blue" } : null;
+    payload.type             = tagLabel ? { label: tagLabel, color: typeClr?.value || "blue" } : null;
     payload.linkWithCodebase = linkEl?.value?.trim() || null;
-    payload.isBlocked = blockedEl ? blockedEl.checked : (item?.isBlocked ?? false);
+    payload.isBlocked        = blockedEl ? blockedEl.checked : (item?.isBlocked ?? false);
   } else {
-    const dueDateEl = $("edit-due-date");
+    const dueDateEl = /** @type {HTMLInputElement|null} */ ($("edit-due-date"));
     payload.due_date = dueDateEl?.value ? new Date(dueDateEl.value).getTime() : undefined;
 
-    const envEl = $("edit-environment");
+    const envEl = /** @type {HTMLInputElement|null} */ ($("edit-environment"));
     if (envEl?.value) payload.environment = envEl.value;
 
     payload.severity = editPriority.value;
 
-    const linkEl = $("edit-link-codebase");
+    const linkEl = /** @type {HTMLInputElement|null} */ ($("edit-link-codebase"));
     payload.fileLinked = linkEl?.value?.trim() || null;
 
     payload.assignees = assigneeIds.map((uid) => {
@@ -778,7 +1122,7 @@ function saveEdit() {
         const now = Date.now();
         payload.estimation = { startDate: now, endDate: now + 86400000 * 7 };
       }
-      const blockedEl = $("edit-is-blocked");
+      const blockedEl = /** @type {HTMLInputElement|null} */ ($("edit-is-blocked"));
       state.pendingMarkAsIssue = blockedEl ? blockedEl.checked : false;
       post({ type: "CREATE_TASK", payload });
     } else {
@@ -801,102 +1145,118 @@ function saveEdit() {
   }
 }
 
-// ── Rich Avatar Assignee Dropdown ──────────────────────────────
+// ── Assignee dropdown — built fresh per edit open ─────────────
+// NOTE: The click-outside handler is registered ONCE globally below
+// to avoid accumulating listeners on every open.
 
+let _assigneeDropdownEl   = /** @type {HTMLElement|null} */ (null);
+let _assigneeDisplayBtnEl = /** @type {HTMLElement|null} */ (null);
+
+document.addEventListener("click", (e) => {
+  if (_assigneeDropdownEl && _assigneeDisplayBtnEl) {
+    if (
+      !_assigneeDropdownEl.contains(/** @type {Node} */ (e.target)) &&
+      !_assigneeDisplayBtnEl.contains(/** @type {Node} */ (e.target))
+    ) {
+      _assigneeDropdownEl.classList.add("hidden");
+    }
+  }
+});
+
+/** @param {string[]} selectedIds */
 function buildAvatarAssigneeSelect(selectedIds = []) {
-  const hiddenInput  = $("edit-assignee");
-  const namePreview  = $("assignee-name-preview");
+  const hiddenInput   = /** @type {HTMLInputElement|null} */ ($("edit-assignee"));
+  const namePreview   = $("assignee-name-preview");
   const avatarPreview = $("assignee-avatar-preview");
-  const dropdown     = $("assignee-dropdown");
-  const displayBtn   = $("assignee-selected");
-  if (!hiddenInput || !dropdown || !displayBtn) { return; }
+  const dropdown      = $("assignee-dropdown");
+  const displayBtn    = $("assignee-selected");
+  if (!hiddenInput || !dropdown || !displayBtn || !namePreview || !avatarPreview) return;
 
-  let currentSelected = Array.isArray(selectedIds) ? [...selectedIds] : (selectedIds ? [selectedIds] : []);
+  _assigneeDropdownEl   = dropdown;
+  _assigneeDisplayBtnEl = displayBtn;
+
+  let currentSelected = Array.isArray(selectedIds) ? [...selectedIds] : [];
 
   const allOptions = state.teamMembers.map((m) => ({
-    userId:    m.userId,
-    name:      m.user?.name ?? m.userId,
-    avatarUrl: m.user?.avatarUrl ?? null,
+    userId:    m.userId || "",
+    name:      m.user?.name || m.userId || "?",
+    avatarUrl: m.user?.avatarUrl || null,
   }));
 
-  const renderAvatar = (av, nm) => av
-    ? `<img src="${esc(av)}" class="mini-avatar-img" style="width:18px;height:18px;border-radius:50%;" />`
-    : `<span class="mini-avatar" style="width:18px;height:18px;font-size:9px;flex-shrink:0;">${esc((nm || "?")[0].toUpperCase())}</span>`;
+  const renderAvatar = (/** @type {string|null} */ av, /** @type {string} */ nm, size = 20) => av
+    ? `<img src="${esc(av)}" class="mini-avatar-img" style="width:${size}px;height:${size}px;border-radius:25%;flex-shrink:0;" />`
+    : `<span class="mini-avatar" style="width:${size}px;height:${size}px;font-size:${Math.floor(size * 0.45)}px;border-radius:25%;flex-shrink:0;">${esc((nm || "?")[0].toUpperCase())}</span>`;
 
   const renderPreviews = () => {
     hiddenInput.value = JSON.stringify(currentSelected);
     if (currentSelected.length === 0) {
-      avatarPreview.innerHTML = `<span style="opacity:0.4;font-size:11px;">?</span>`;
+      avatarPreview.innerHTML = `<span style="width:20px;height:20px;border-radius:25%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;font-size:11px;color:#71717a;flex-shrink:0;">?</span>`;
       namePreview.textContent = "Unassigned";
     } else if (currentSelected.length === 1) {
       const m = allOptions.find((o) => o.userId === currentSelected[0]);
-      if (m) {
-        avatarPreview.innerHTML = renderAvatar(m.avatarUrl, m.name);
-        namePreview.textContent = m.name;
-      } else {
-        avatarPreview.innerHTML = `<span style="opacity:0.4;font-size:11px;">?</span>`;
-        namePreview.textContent = "Unknown User";
-      }
+      avatarPreview.innerHTML = m ? renderAvatar(m.avatarUrl, m.name) : `<span style="opacity:0.4;font-size:11px;">?</span>`;
+      namePreview.textContent = m ? m.name : "Unknown User";
     } else {
-      avatarPreview.innerHTML = currentSelected.slice(0, 2).map((id) => {
-        const m = allOptions.find((o) => o.userId === id);
-        return m ? renderAvatar(m.avatarUrl, m.name) : "";
-      }).join("") + (currentSelected.length > 2 ? `<span style="font-size:9px;margin-left:2px;">+${currentSelected.length - 2}</span>` : "");
+      // Stacked avatars with proper overlap
+      const stackHtml = currentSelected.slice(0, 3).map((uid, idx) => {
+        const m = allOptions.find((o) => o.userId === uid);
+        return m ? `<div style="margin-left:${idx > 0 ? "-6px" : "0"};z-index:${10 - idx};position:relative;">${renderAvatar(m.avatarUrl, m.name)}</div>` : "";
+      }).join("");
+      const extra = currentSelected.length > 3 ? `<span style="font-size:10px;margin-left:4px;color:#a3a3a3;">+${currentSelected.length - 3}</span>` : "";
+      avatarPreview.innerHTML = `<div style="display:flex;align-items:center;">${stackHtml}</div>${extra}`;
       namePreview.textContent = `${currentSelected.length} Assignees`;
     }
   };
 
-  const bindOptions = () => {
-    dropdown.innerHTML = allOptions.map((o) => {
-      const isSelected = currentSelected.includes(o.userId);
-      return `<div class="assignee-option" data-userid="${o.userId}" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
-        <div style="display:flex;align-items:center;gap:6px;">
-          ${renderAvatar(o.avatarUrl, o.name)}
-          <span>${esc(o.name)}</span>
-        </div>
-        ${isSelected ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ""}
-      </div>`;
-    }).join("");
+  const rebuildDropdown = () => {
+    dropdown.innerHTML = allOptions.length === 0
+      ? `<div style="padding:8px;font-size:11px;opacity:0.6;">No team members found.</div>`
+      : allOptions.map((o) => {
+          const isSelected = currentSelected.includes(o.userId);
+          return `<div class="assignee-option" data-userid="${esc(o.userId)}" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              ${renderAvatar(o.avatarUrl, o.name)}
+              <span>${esc(o.name)}</span>
+            </div>
+            ${isSelected ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ""}
+          </div>`;
+        }).join("");
 
     dropdown.querySelectorAll(".assignee-option").forEach((opt) => {
       opt.addEventListener("click", (e) => {
         e.stopPropagation();
-        const uid = opt.getAttribute("data-userid") ?? "";
+        const uid = opt.getAttribute("data-userid") || "";
         if (currentSelected.includes(uid)) {
-          currentSelected = currentSelected.filter((id) => id !== uid);
+          currentSelected = currentSelected.filter((x) => x !== uid);
         } else {
           currentSelected.push(uid);
         }
         renderPreviews();
-        bindOptions();
+        rebuildDropdown();
       });
     });
   };
 
   renderPreviews();
-  bindOptions();
+  rebuildDropdown();
+  dropdown.classList.add("hidden");
 
+  // Replace onclick to avoid stacking handlers
   displayBtn.onclick = (e) => {
     e.stopPropagation();
     dropdown.classList.toggle("hidden");
   };
-
-  document.addEventListener("click", (e) => {
-    if (dropdown && displayBtn && !dropdown.contains(e.target) && !displayBtn.contains(e.target)) {
-      dropdown.classList.add("hidden");
-    }
-  });
 }
 
-// ── Confirm delete ─────────────────────────────────────────────
+// ── Confirm delete ────────────────────────────────────────────
 
 function confirmDelete(type, id) {
   const name = type === "task"
-    ? (state.tasks.find((t) => t.id === id)?.title ?? "this task")
-    : (state.issues.find((i) => i.id === id)?.title ?? "this issue");
+    ? (state.tasks.find((t) => (t.id || t._id) === id)?.title ?? "this task")
+    : (state.issues.find((i) => (i.id || i._id) === id)?.title ?? "this issue");
 
-  const promptText = window.prompt(`To delete "${name}", please type "delete" below to confirm:`);
-  if (promptText === null || promptText.trim().toLowerCase() !== "delete") { return; }
+  const promptText = window.prompt(`To delete "${name}", type "delete" to confirm:`);
+  if (!promptText || promptText.trim().toLowerCase() !== "delete") return;
 
   if (type === "task") {
     post({ type: "DELETE_TASK",  payload: { taskId: id } });
@@ -905,20 +1265,29 @@ function confirmDelete(type, id) {
   }
 }
 
-// ── Tab switching ─────────────────────────────────────────────
+// ── Status tab bar ────────────────────────────────────────────
+
+function updateNewButtonLabel() {
+  if (!btnNewItem || !btnNewItemLabel) return;
+  const label = state.activeView === "issues" ? "New Issue" : "New Task";
+  btnNewItemLabel.textContent = label;
+  btnNewItem.title = label;
+}
 
 function renderStatusTabs() {
   const container = $("status-tabs");
   if (!container) return;
 
+  updateNewButtonLabel();
+
   const statuses = state.activeView === "tasks"
     ? [
-        { val: "all",          label: "All" },
-        { val: "not started",  label: "Not Started" },
-        { val: "inprogress",   label: "In Progress" },
-        { val: "reviewing",    label: "Reviewing" },
-        { val: "testing",      label: "Testing" },
-        { val: "completed",    label: "Completed" },
+        { val: "all",         label: "All" },
+        { val: "not started", label: "Not Started" },
+        { val: "inprogress",  label: "In Progress" },
+        { val: "reviewing",   label: "Reviewing" },
+        { val: "testing",     label: "Testing" },
+        { val: "completed",   label: "Completed" },
       ]
     : [
         { val: "all",        label: "All" },
@@ -933,14 +1302,14 @@ function renderStatusTabs() {
   }
 
   container.innerHTML = statuses.map((s) =>
-    `<button class="tab ${state.activeStatus === s.val ? "active" : ""}" data-status="${s.val}">${s.label}</button>`
+    `<button class="tab${state.activeStatus === s.val ? " active" : ""}" data-status="${s.val}">${s.label}</button>`
   ).join("");
 
   container.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       container.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
-      state.activeStatus = tab.getAttribute("data-status");
+      state.activeStatus = tab.getAttribute("data-status") || "all";
       renderItems();
     });
   });
@@ -950,53 +1319,55 @@ mainTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     mainTabs.forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
-    state.activeView = tab.getAttribute("data-view");
+    state.activeView   = tab.getAttribute("data-view") || "tasks";
+    state.activeStatus = "all";
     renderStatusTabs();
     closeEditPanel();
     renderItems();
   });
 });
 
-renderStatusTabs();
-
 // ── Screen switching ──────────────────────────────────────────
 
-function showScreen(name) {
-  screenLogin.classList.add("hidden");
-  screenLoading.classList.add("hidden");
-  screenMain.classList.add("hidden");
-  ({ login: screenLogin, loading: screenLoading, main: screenMain }[name])
-    ?.classList.remove("hidden");
+function showScreen(/** @type {"login"|"loading"|"main"} */ name) {
+  if (screenLogin)   screenLogin.classList.add("hidden");
+  if (screenLoading) screenLoading.classList.add("hidden");
+  if (screenMain)    screenMain.classList.add("hidden");
+  const target = { login: screenLogin, loading: screenLoading, main: screenMain }[name];
+  target?.classList.remove("hidden");
 }
 
-function showError(msg) {
+function showError(/** @type {string} */ msg) {
   console.error("[Wekraft]", msg);
-  if (screenMain.classList.contains("hidden")) { showScreen("main"); }
-  itemList.innerHTML = `
-    <div class="empty-state" style="color:var(--vscode-errorForeground)">
-      ⚠ ${esc(msg)}
-    </div>`;
+  showScreen("main");
+  if (itemList) {
+    itemList.innerHTML = `
+      <div class="empty-state" style="color:var(--vscode-errorForeground)">
+        ⚠ ${esc(msg)}
+      </div>`;
+  }
 }
 
 // ── Utilities ─────────────────────────────────────────────────
 
-function post(msg) { vscode.postMessage(msg); }
+function post(/** @type {any} */ msg) { vscode.postMessage(msg); }
 
-function esc(str) {
+function esc(/** @type {any} */ str) {
   return String(str ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// ── Wire up buttons ───────────────────────────────────────────
+// ── Wire up static buttons ────────────────────────────────────
 
-btnLogin.addEventListener("click",   () => post({ type: "LOGIN_REQUEST" }));
-btnLogout.addEventListener("click",  () => post({ type: "LOGOUT_REQUEST" }));
-btnSaveEdit.addEventListener("click",  saveEdit);
-btnCloseEdit.addEventListener("click", closeEditPanel);
+btnLogin?.addEventListener("click",   () => post({ type: "LOGIN_REQUEST" }));
+btnLogout?.addEventListener("click",  () => post({ type: "LOGOUT_REQUEST" }));
+btnSaveEdit?.addEventListener("click",  saveEdit);
+btnCloseEdit?.addEventListener("click", closeEditPanel);
+$("btn-close-edit-bottom")?.addEventListener("click", closeEditPanel);
 
-const btnClearCodebase  = $("btn-clear-codebase");
-const editLinkCodebase  = $("edit-link-codebase");
+const btnClearCodebase = $("btn-clear-codebase");
+const editLinkCodebase = /** @type {HTMLInputElement|null} */ ($("edit-link-codebase"));
 if (btnClearCodebase && editLinkCodebase) {
   btnClearCodebase.addEventListener("click", () => {
     editLinkCodebase.value = "";
@@ -1014,38 +1385,39 @@ if (editLinkCodebase && repoStructureContainer) {
 }
 
 document.addEventListener("click", (e) => {
-  if (repoStructureContainer && !e.target.closest("#task-link-row")) {
+  if (repoStructureContainer && !/** @type {Element} */ (e.target).closest?.("#task-link-row")) {
     repoStructureContainer.classList.add("hidden");
   }
 });
 
-btnNewItem.addEventListener("click", () => {
+btnNewItem?.addEventListener("click", () => {
   openEditPanel(state.activeView === "issues" ? "issue" : "task", null);
 });
 
-editTitle.addEventListener("keydown", (e) => {
-  if (e.key === "Enter")  { saveEdit(); }
-  if (e.key === "Escape") { closeEditPanel(); }
-});
+if (editTitle) {
+  editTitle.addEventListener("keydown", (e) => {
+    if (e.key === "Enter")  saveEdit();
+    if (e.key === "Escape") closeEditPanel();
+  });
+}
 
-// Date validation
-const startDateEl = $("edit-start-date");
-const endDateEl   = $("edit-end-date");
+// Date cross-validation
+const startDateEl = /** @type {HTMLInputElement|null} */ ($("edit-start-date"));
+const endDateEl   = /** @type {HTMLInputElement|null} */ ($("edit-end-date"));
 if (startDateEl && endDateEl) {
   startDateEl.addEventListener("change", () => {
-    if (startDateEl.value) {
-      const nextDay = new Date(startDateEl.value);
-      nextDay.setDate(nextDay.getDate() + 1);
-      const nextDayStr = nextDay.toISOString().split("T")[0];
-      endDateEl.min = nextDayStr;
-      if (endDateEl.value && endDateEl.value <= startDateEl.value) {
-        endDateEl.value = nextDayStr;
-      }
+    if (!startDateEl.value) return;
+    const nextDay = new Date(startDateEl.value);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayStr = nextDay.toISOString().split("T")[0];
+    endDateEl.min = nextDayStr;
+    if (endDateEl.value && endDateEl.value <= startDateEl.value) {
+      endDateEl.value = nextDayStr;
     }
   });
 }
 
-// Wire up color picker dots — must run after DOM is ready
+// Tag color picker dots (static in HTML, wired once at boot)
 document.querySelectorAll(".tag-color-picker .color-dot").forEach((dot) => {
   dot.addEventListener("click", () => {
     const color = dot.getAttribute("data-color");
@@ -1053,7 +1425,7 @@ document.querySelectorAll(".tag-color-picker .color-dot").forEach((dot) => {
   });
 });
 
-// ── Repository Structure Tree Rendering ──────────────────────
+// ── Repo tree ─────────────────────────────────────────────────
 
 function renderRepoTree(nodes, container, searchQuery = "") {
   if (!container) return;
@@ -1063,51 +1435,52 @@ function renderRepoTree(nodes, container, searchQuery = "") {
     return;
   }
 
-  const query = searchQuery.toLowerCase().trim();
-  const linkEl = $("edit-link-codebase");
+  const query  = searchQuery.toLowerCase().trim();
+  const linkEl = /** @type {HTMLInputElement|null} */ ($("edit-link-codebase"));
 
-  function buildNodeHtml(node, depth = 0) {
+  function checkHasMatchingChild(/** @type {any} */ dirNode, /** @type {string} */ q) {
+    if (!dirNode) return false;
+    const name = (dirNode.name || "").toLowerCase();
+    const path = (dirNode.path || "").toLowerCase();
+    if (name.includes(q) || path.includes(q)) return true;
+    return Array.isArray(dirNode.children) && dirNode.children.some((c) => checkHasMatchingChild(c, q));
+  }
+
+  function buildNodeHtml(/** @type {any} */ node, depth = 0) {
+    if (!node) return null;
     const isDir = node.type === "directory";
 
     if (query) {
-      if (isDir) {
-        if (!checkHasMatchingChild(node, query)) return null;
-      } else {
-        if (!node.name.toLowerCase().includes(query) && !node.path.toLowerCase().includes(query)) return null;
-      }
+      if (isDir && !checkHasMatchingChild(node, query)) return null;
+      if (!isDir && !((node.name || "").toLowerCase().includes(query) || (node.path || "").toLowerCase().includes(query))) return null;
     }
 
     const iconHtml = isDir
       ? `<svg class="folder-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`
-      : `<svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+      : `<svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 
-    const isActive   = linkEl && linkEl.value === node.path;
-    const activeClass = isActive ? "active-file" : "";
+    const isActive = linkEl && linkEl.value === node.path;
 
     const itemEl = document.createElement("div");
-    itemEl.className   = `tree-node ${activeClass}`;
-    itemEl.dataset.path = node.path;
-    itemEl.dataset.type = node.type;
-    itemEl.innerHTML = `
-      <span class="tree-node-icon">${iconHtml}</span>
-      <span class="tree-node-label" title="${esc(node.name)}">${esc(node.name)}</span>
-    `;
+    itemEl.className    = `tree-node${isActive ? " active-file" : ""}`;
+    itemEl.dataset.path = node.path || "";
+    itemEl.dataset.type = node.type || "";
+    itemEl.innerHTML    = `<span class="tree-node-icon">${iconHtml}</span><span class="tree-node-label" title="${esc(node.name)}">${esc(node.name)}</span>`;
 
     const wrapper = document.createElement("div");
     wrapper.appendChild(itemEl);
 
-    if (isDir && node.children?.length > 0) {
-      const childContainer = document.createElement("div");
-      childContainer.className = "tree-children";
+    if (isDir && Array.isArray(node.children) && node.children.length > 0) {
+      const childContainer        = document.createElement("div");
+      childContainer.className    = "tree-children";
       if (!query) childContainer.classList.add("collapsed");
 
       node.children.forEach((child) => {
-        const childNode = buildNodeHtml(child, depth + 1);
-        if (childNode) childContainer.appendChild(childNode);
+        const childEl = buildNodeHtml(child, depth + 1);
+        if (childEl) childContainer.appendChild(childEl);
       });
 
       wrapper.appendChild(childContainer);
-
       itemEl.addEventListener("click", (e) => {
         e.stopPropagation();
         childContainer.classList.toggle("collapsed");
@@ -1117,7 +1490,7 @@ function renderRepoTree(nodes, container, searchQuery = "") {
         e.stopPropagation();
         container.querySelectorAll(".tree-node.active-file").forEach((n) => n.classList.remove("active-file"));
         itemEl.classList.add("active-file");
-        if (linkEl) linkEl.value = node.path;
+        if (linkEl) linkEl.value = node.path || "";
         const dropdown = $("repo-structure-container");
         if (dropdown) dropdown.classList.add("hidden");
       });
@@ -1126,17 +1499,13 @@ function renderRepoTree(nodes, container, searchQuery = "") {
     return wrapper;
   }
 
-  function checkHasMatchingChild(dirNode, q) {
-    if (dirNode.name.toLowerCase().includes(q) || dirNode.path.toLowerCase().includes(q)) return true;
-    return dirNode.children?.some((child) => checkHasMatchingChild(child, q)) ?? false;
-  }
-
   nodes.forEach((node) => {
-    const nodeEl = buildNodeHtml(node);
-    if (nodeEl) container.appendChild(nodeEl);
+    const el = buildNodeHtml(node);
+    if (el) container.appendChild(el);
   });
 }
 
 // ── Boot ──────────────────────────────────────────────────────
 
+renderStatusTabs();
 post({ type: "READY" });
