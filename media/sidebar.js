@@ -147,7 +147,11 @@ window.addEventListener("message", ({ data: msg }) => {
       rawWorkspaceFiles = msg.payload;
       renderRepoTree(rawWorkspaceFiles, repoTree);
       break;
-    case "ERROR":   showError(msg.payload.message); break;
+    case "ERROR":
+      tasksLoading = false;
+      issuesLoading = false;
+      showError(msg.payload.message);
+      break;
     case "REFRESH": loadAll(); break;
   }
 });
@@ -180,10 +184,13 @@ function onAuthState(auth) {
     if (teamAvatars)     teamAvatars.innerHTML   = "";
     if (itemList)        itemList.innerHTML       = '<div class="empty-state">Select a project to load data.</div>';
     closeEditPanel();
+    stopPolling();
 
     showScreen("login");
     return;
   }
+
+  startPolling();
 
   const u = auth.user;
   if (u && userName && userRole && userAvatar) {
@@ -198,7 +205,7 @@ function onAuthState(auth) {
 
     if (u.avatarUrl) {
       userAvatar.classList.add("has-image");
-      userAvatar.innerHTML = `<img src="${esc(u.avatarUrl)}" alt="Avatar" class="mini-avatar-img" style="width:48px;height:48px;border-radius:25%;" />`;
+      userAvatar.innerHTML = `<img src="${safeImgSrc(u.avatarUrl)}" alt="Avatar" class="mini-avatar-img" style="width:48px;height:48px;border-radius:25%;" />`;
     } else {
       userAvatar.innerHTML = `<span style="font-size:18px;">${esc((u.name || "?")[0].toUpperCase())}</span>`;
     }
@@ -365,9 +372,18 @@ function nextEpoch() {
   return state.fetchEpoch;
 }
 
+let tasksLoading = false;
+let issuesLoading = false;
+let lastFetchStartTime = 0;
+let lastLoadSilentTime = 0;
+
 function loadAll() {
   if (!state.projectId) return;
   const epoch = nextEpoch();
+  lastFetchStartTime = Date.now();
+  tasksLoading = true;
+  issuesLoading = true;
+
   // Only show the loading skeleton on the FIRST load (when we have nothing to display).
   // For all subsequent refreshes (tab switch, sprint change, project change), we keep
   // the current content visible and update it silently — no more flash of loading screen.
@@ -381,7 +397,6 @@ function loadAll() {
   post({ type: "FETCH_TEAM_MEMBERS", payload: { projectId: state.projectId } });
 }
 
-let lastLoadSilentTime = 0;
 function loadAllSilent() {
   if (!state.projectId || !state.auth?.isAuthenticated || state.editing) return;
   
@@ -390,19 +405,37 @@ function loadAllSilent() {
 
   // Debounce rapid calls (e.g., from tab switching focus events) to prevent 429 Rate Limit
   const now = Date.now();
+  if ((tasksLoading || issuesLoading) && (now - lastFetchStartTime < 15000)) {
+    return;
+  }
+
   if (now - lastLoadSilentTime < 5000) return;
   lastLoadSilentTime = now;
+  lastFetchStartTime = now;
 
-  // Silent polls do NOT change the epoch — they carry the current epoch.
-  // This means if a silent poll response is stale it will still overwrite,
-  // but we accept that tradeoff. The epoch only protects cross-loadAll races.
+  tasksLoading = true;
+  issuesLoading = true;
+
+  const epoch = nextEpoch(); // Unique epoch for each poll to avoid races
   post({ type: "FETCH_PROJECTS" });
-  post({ type: "FETCH_TASKS",   payload: { projectId: state.projectId, sprintId: state.sprintId || undefined, epoch: state.fetchEpoch } });
-  post({ type: "FETCH_ISSUES",  payload: { projectId: state.projectId, epoch: state.fetchEpoch } });
+  post({ type: "FETCH_TASKS",   payload: { projectId: state.projectId, sprintId: state.sprintId || undefined, epoch } });
+  post({ type: "FETCH_ISSUES",  payload: { projectId: state.projectId, epoch } });
 }
 
-// Background polling — real-time sync, 8s interval (not 5s — reduce server load at scale)
-setInterval(loadAllSilent, 8000);
+// Background polling — real-time sync, 8s interval
+let pollInterval = null;
+
+function startPolling() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(loadAllSilent, 8000);
+}
+
+function stopPolling() {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+}
 
 // Instantly refresh data when the user switches back to this VS Code window or tab
 document.addEventListener("visibilitychange", () => {
@@ -425,6 +458,7 @@ window.addEventListener("focus", () => {
 function onTasksLoaded(tasks, epoch) {
   // Discard stale responses from a superseded fetch cycle
   if (epoch !== undefined && epoch !== state.fetchEpoch) return;
+  tasksLoading = false;
   state.tasks = Array.isArray(tasks) ? tasks : [];
   // Always ensure the main screen is visible — never stay on loading screen
   showScreen("main");
@@ -439,6 +473,7 @@ function onTasksLoaded(tasks, epoch) {
  */
 function onIssuesLoaded(issues, epoch) {
   if (epoch !== undefined && epoch !== state.fetchEpoch) return;
+  issuesLoading = false;
   state.issues = Array.isArray(issues) ? issues : [];
   // Always ensure the main screen is visible
   showScreen("main");
@@ -459,7 +494,7 @@ function onTeamLoaded(members) {
       const initial    = (m.user?.name || "?")[0].toUpperCase();
       const roleBadge  = m.role === "admin" || m.role === "owner" ? "👑 " : "";
       const avatarHtml = m.user?.avatarUrl
-        ? `<img src="${esc(m.user.avatarUrl)}" class="mini-avatar-img" />`
+        ? `<img src="${safeImgSrc(m.user.avatarUrl)}" class="mini-avatar-img" />`
         : `<span class="mini-avatar">${esc(initial)}</span>`;
 
       return `<div class="team-avatar-item" title="${esc(m.user?.name || "")} (${m.role || ""})">
@@ -607,6 +642,17 @@ function renderItems() {
 // ── Tag badge helper ──────────────────────────────────────────
 
 /**
+ * Validates hex colors strictly to prevent CSS injection.
+ * @param {string|null|undefined} colorStr
+ * @returns {string}
+ */
+function cssSafeColor(colorStr) {
+  const HEX_REGEX = /^#[0-9a-fA-F]{3,6}$/;
+  const rawColor = (colorStr || "").trim();
+  return HEX_REGEX.test(rawColor) ? rawColor : "#6366f1";
+}
+
+/**
  * @param {{ label: string, color: string }|null|undefined} tag
  */
 function tagBadgeHtml(tag) {
@@ -615,14 +661,9 @@ function tagBadgeHtml(tag) {
   if (c) {
     return `<span style="font-size:9px;padding:2px 5px;border-radius:4px;margin-left:6px;background:${c.bg};color:${c.text};border:1px solid ${c.border};">${esc(tag.label)}</span>`;
   }
-  // Fallback: legacy hex color — HIGH-03 SECURITY: validate strictly before CSS injection.
-  // esc() escapes HTML entities but NOT CSS values. A crafted tag.color like
-  // "; color:red; background:url(x)" would break out of the style attribute.
-  const HEX_REGEX = /^#[0-9a-fA-F]{3,6}$/;
-  const rawColor = tag.color || "";
-  const hex = HEX_REGEX.test(rawColor) ? rawColor : "#6366f1";  // safe fallback
+  // Fallback: legacy hex color — validated strictly to prevent CSS injection.
+  const hex = cssSafeColor(tag.color);
   return `<span style="font-size:9px;padding:2px 5px;border-radius:4px;margin-left:6px;background:${hex}22;color:${hex};border:1px solid ${hex}44;">${esc(tag.label)}</span>`;
-
 }
 
 // ── Status badge slugify ──────────────────────────────────────
@@ -760,7 +801,7 @@ function itemCardHtml(item) {
       const name = a.name || a.user?.name || "Member";
       const avatar = a.avatarUrl || a.avatar || "";
       if (avatar) {
-        return `<img src="${esc(avatar)}" class="mini-avatar-img" style="margin-left:${ml};z-index:${z};" title="${esc(name)}" />`;
+        return `<img src="${safeImgSrc(avatar)}" class="mini-avatar-img" style="margin-left:${ml};z-index:${z};" title="${esc(name)}" />`;
       }
       const initial = (name || "?")[0].toUpperCase();
       return `<span class="mini-avatar" style="margin-left:${ml};z-index:${z};" title="${esc(name)}">${esc(initial)}</span>`;
@@ -1077,7 +1118,7 @@ function selectTagColor(colorNameOrHex) {
   document.querySelectorAll(".tag-color-picker .color-dot").forEach((dot) => {
     if (dot.getAttribute("data-color") === colorNameOrHex) {
       dot.classList.add("active");
-      dot.innerHTML = "✓";
+      dot.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" style="color:white;"><polyline points="20 6 9 17 4 12"/></svg>`;
     } else {
       dot.classList.remove("active");
       dot.innerHTML = "";
@@ -1129,14 +1170,14 @@ function saveEdit() {
     if (startEl?.value && endEl?.value) {
       const todayStr = new Date().toISOString().split("T")[0];
       if (startEl.value < todayStr) {
-        alert("Start Date cannot be in the past.");
+        showNotificationError("Start Date cannot be in the past.");
         startEl.focus();
         return;
       }
       const startT = new Date(startEl.value).getTime();
       const endT   = new Date(endEl.value).getTime();
       if (startT >= endT) {
-        alert("End Date must be after the Start Date.");
+        showNotificationError("End Date must be after the Start Date.");
         endEl.focus();
         return;
       }
@@ -1239,7 +1280,7 @@ function buildAvatarAssigneeSelect(selectedIds = []) {
   }));
 
   const renderAvatar = (/** @type {string|null} */ av, /** @type {string} */ nm, size = 20) => av
-    ? `<img src="${esc(av)}" class="mini-avatar-img" style="width:${size}px;height:${size}px;border-radius:25%;flex-shrink:0;" />`
+    ? `<img src="${safeImgSrc(av)}" class="mini-avatar-img" style="width:${size}px;height:${size}px;border-radius:25%;flex-shrink:0;" />`
     : `<span class="mini-avatar" style="width:${size}px;height:${size}px;font-size:${Math.floor(size * 0.45)}px;border-radius:25%;flex-shrink:0;">${esc((nm || "?")[0].toUpperCase())}</span>`;
 
   const renderPreviews = () => {
@@ -1310,14 +1351,7 @@ function confirmDelete(type, id) {
     ? (state.tasks.find((t) => (t.id || t._id) === id)?.title ?? "this task")
     : (state.issues.find((i) => (i.id || i._id) === id)?.title ?? "this issue");
 
-  const promptText = window.prompt(`To delete "${name}", type "delete" to confirm:`);
-  if (!promptText || promptText.trim().toLowerCase() !== "delete") return;
-
-  if (type === "task") {
-    post({ type: "DELETE_TASK",  payload: { taskId: id } });
-  } else {
-    post({ type: "DELETE_ISSUE", payload: { issueId: id } });
-  }
+  post({ type: "CONFIRM_DELETE", payload: { type, id, name } });
 }
 
 // ── Status tab bar ────────────────────────────────────────────
@@ -1407,10 +1441,34 @@ function showError(/** @type {string} */ msg) {
 
 function post(/** @type {any} */ msg) { vscode.postMessage(msg); }
 
-function esc(/** @type {any} */ str) {
+/**
+ * Escapes characters for HTML context only. Do NOT use for attribute values
+ * without quotes, styles, or URL attributes (e.g. href, src).
+ * @param {any} str
+ * @returns {string}
+ */
+function esc(str) {
   return String(str ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    .replace(/&/g,  "&amp;").replace(/</g,  "&lt;")
+    .replace(/>/g,  "&gt;").replace(/"/g,  "&quot;");
+}
+
+/**
+ * Ensures the image URL uses a safe protocol (http or https) and escapes it.
+ * Prevents javascript: or data: URL injection inside image tags.
+ * @param {string|null|undefined} url
+ * @returns {string}
+ */
+function safeImgSrc(url) {
+  const clean = (url || "").trim();
+  if (/^https?:\/\//i.test(clean)) {
+    return esc(clean);
+  }
+  return ""; // safe empty string fallback
+}
+
+function showNotificationError(msg) {
+  post({ type: "SHOW_ERROR", payload: { message: msg } });
 }
 
 // ── Wire up static buttons ────────────────────────────────────
@@ -1464,6 +1522,12 @@ if (editLinkCodebase && repoStructureContainer) {
     repoStructureContainer.classList.toggle("hidden");
   });
   repoStructureContainer.addEventListener("click", (e) => e.stopPropagation());
+}
+
+if (repoSearch && repoTree) {
+  repoSearch.addEventListener("input", () => {
+    renderRepoTree(rawWorkspaceFiles, repoTree, repoSearch.value);
+  });
 }
 
 document.addEventListener("click", (e) => {

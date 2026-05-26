@@ -212,6 +212,41 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       case "REFRESH":
         this.refresh();
         break;
+
+      case "CONFIRM_DELETE": {
+        const { type, id, name } = msg.payload;
+        const confirm = await vscode.window.showWarningMessage(
+          `Are you sure you want to delete the ${type} "${name}"? This action cannot be undone.`,
+          { modal: true },
+          "Delete"
+        );
+        if (confirm === "Delete") {
+          if (type === "task") {
+            await this._run(
+              () => this.convexClient.deleteTask(id),
+              () =>
+                this._post({
+                  type: "TASK_DELETED",
+                  payload: { taskId: id },
+                })
+            );
+          } else {
+            await this._run(
+              () => this.convexClient.deleteIssue(id),
+              () =>
+                this._post({
+                  type: "ISSUE_DELETED",
+                  payload: { issueId: id },
+                })
+            );
+          }
+        }
+        break;
+      }
+
+      case "SHOW_ERROR":
+        vscode.window.showErrorMessage(`Wekraft: ${msg.payload.message}`);
+        break;
     }
   }
 
@@ -284,7 +319,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="${styleUri}" rel="stylesheet" />
   <title>Wekraft</title>
 </head>
@@ -375,13 +410,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         <div class="deadline-content">
           <div class="deadline-left">
             <div class="deadline-icon-box">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="url(#deadlineGradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <defs>
-                  <linearGradient id="deadlineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stop-color="#f472b6" />
-                    <stop offset="100%" stop-color="#d946ef" />
-                  </linearGradient>
-                </defs>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/>
                 <polyline points="12 6 12 12 16 14"/>
               </svg>
@@ -573,6 +602,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         </div>
         <div class="repo-structure-container hidden" id="repo-structure-container" style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 1000; box-shadow: 0 4px 24px rgba(0,0,0,0.4);">
           <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #71717a; margin-bottom: 6px;">Repository Structure</div>
+          <input id="repo-search" class="input input-sm" type="text" placeholder="Search files…" style="width: 100%; margin-bottom: 6px; box-sizing: border-box;" />
           <div id="repo-tree" style="font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; padding-right: 4px;">
             <!-- Tree nodes loaded dynamically -->
           </div>
@@ -815,8 +845,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     return root;
   }
 
-  private _getWorkspaceFileTree(dir: string, baseDir: string = dir): any[] {
+  private _getWorkspaceFileTree(
+    dir: string,
+    baseDir: string = dir,
+    depth: number = 0,
+    stateRef: { fileCount: number } = { fileCount: 0 }
+  ): any[] {
     try {
+      if (depth > 6 || stateRef.fileCount > 2000) {
+        return [];
+      }
       const items = fs.readdirSync(dir, { withFileTypes: true });
       const nodes: any[] = [];
 
@@ -830,7 +868,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           name === "out" ||
           name === "package-lock.json" ||
           name === "yarn.lock" ||
-          name === "pnpm-lock.yaml"
+          name === "pnpm-lock.yaml" ||
+          name === "bower_components" ||
+          name === "vendor" ||
+          name === "target" ||
+          name === ".next" ||
+          name === ".nuxt" ||
+          name === ".git" ||
+          name === ".svn" ||
+          name === ".hg"
         ) {
           continue;
         }
@@ -839,7 +885,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
 
         if (item.isDirectory()) {
-          const children = this._getWorkspaceFileTree(fullPath, baseDir);
+          const children = this._getWorkspaceFileTree(fullPath, baseDir, depth + 1, stateRef);
           nodes.push({
             name,
             path: relativePath,
@@ -852,6 +898,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }),
           });
         } else if (item.isFile()) {
+          stateRef.fileCount += 1;
           nodes.push({
             name,
             path: relativePath,

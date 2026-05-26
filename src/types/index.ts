@@ -222,6 +222,8 @@ export type WebviewToExtensionMessage =
   | { type: "CREATE_ISSUE"; payload: CreateIssueInput }
   | { type: "UPDATE_ISSUE"; payload: UpdateIssueInput }
   | { type: "FETCH_REPO_STRUCTURE"; payload: { repoFullName?: string } }
+  | { type: "CONFIRM_DELETE"; payload: { type: "task" | "issue"; id: string; name: string } }
+  | { type: "SHOW_ERROR"; payload: { message: string } }
   | { type: "DELETE_ISSUE"; payload: { issueId: string } };
 
 export type ExtensionToWebviewMessage =

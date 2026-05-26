@@ -251,7 +251,12 @@ export class ConvexClient {
       });
 
       if (!response.ok) {
-        const text = await response.text();
+        let text = await response.text();
+        if (response.status >= 500) {
+          text = "An unexpected server error occurred. Please try again later.";
+        } else if (text.length > 200 || text.includes("stack") || text.includes("Error:")) {
+          text = "Request failed. Please check your connection or input.";
+        }
         return {
           success: false,
           error: text || `HTTP ${response.status}`,
@@ -278,6 +283,10 @@ export class ConvexClient {
     const config = vscode.workspace.getConfiguration("wekraft");
     const inspected = config.inspect<string>("convexSiteUrl");
     // Prefer explicit global/user value; fall back to default; ignore workspace value.
-    return inspected?.globalValue || inspected?.defaultValue || "";
+    const url = inspected?.globalValue || inspected?.defaultValue || "";
+    if (!url || !url.startsWith("https://")) {
+      return "";
+    }
+    return url;
   }
 }

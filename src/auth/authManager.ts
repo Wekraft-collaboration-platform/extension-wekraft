@@ -116,6 +116,12 @@ export class AuthManager {
    *   vscode://wekraft.wekraft-vscode/auth?token=<hex>
    */
   async handleHandshakeCallback(token: string): Promise<void> {
+    const HEX_TOKEN_RE = /^[0-9a-fA-F]{32,128}$/;
+    if (!token || !HEX_TOKEN_RE.test(token)) {
+      vscode.window.showErrorMessage("Wekraft: Invalid auth callback token format.");
+      return;
+    }
+
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -156,6 +162,14 @@ export class AuthManager {
                 console.error("[Wekraft] Failed to fetch user info on login:", e);
               }
             }
+          }
+
+          if (!result.user) {
+            result.user = {
+              name: "Wekraft User",
+              avatarUrl: "",
+              accountType: "free",
+            };
           }
 
           await this._persistSession(result);
@@ -259,7 +273,7 @@ export class AuthManager {
     this._emit();
   }
 
-  async updateUser(userUpdate: any): Promise<void> {
+  async updateUser(userUpdate: Partial<Omit<WekraftUser, "id">>): Promise<void> {
     if (!this._user) {
       this._user = { id: this._userId || "", name: "Unknown", email: "", accountType: "free", role: "member" };
     }

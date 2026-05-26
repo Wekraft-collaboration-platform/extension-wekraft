@@ -64,7 +64,8 @@ export function activate(context: vscode.ExtensionContext): void {
       const params = new URLSearchParams(uri.query);
       const token = params.get("token");
 
-      if (!token || token.length < 32) {
+      const HEX_TOKEN_RE = /^[0-9a-fA-F]{32,128}$/;
+      if (!token || !HEX_TOKEN_RE.test(token)) {
         vscode.window.showErrorMessage(
           "Wekraft: Auth callback contained an invalid token."
         );
