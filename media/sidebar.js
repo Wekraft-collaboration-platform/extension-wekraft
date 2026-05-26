@@ -74,8 +74,8 @@ const ICONS = {
   dev: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
   staging: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
   production: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
-  project: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d4d4d8" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
-  sprint: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d4d4d8" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+  project: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+  sprint: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
   task: `<svg width="16" height="16" viewBox="0 0 24 24" fill="#1447E6"><rect x="3" y="3" width="18" height="18" rx="4" /><circle cx="8" cy="9" r="1.5" fill="white" /><path d="M11 9h5" stroke="white" stroke-width="2" stroke-linecap="round" /><circle cx="8" cy="15" r="1.5" fill="white" /><path d="M11 15h5" stroke="white" stroke-width="2" stroke-linecap="round" /></svg>`,
   issue: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="6" /><path d="M12 7a3 3 0 0 0-3-3h6a3 3 0 0 0-3 3z" fill="#ef4444" /><line x1="12" y1="7" x2="12" y2="19" /><path d="M9 4C9 3 8 2.5 8 2.5M15 4C15 3 16 2.5 16 2.5" /><path d="M6 10H3.5M5 14H2.5M6 18H3.5M18 10h2.5M19 14h2.5M18 18h2.5" /><circle cx="9.5" cy="11.5" r="0.8" fill="#ef4444" /><circle cx="14.5" cy="11.5" r="0.8" fill="#ef4444" /><circle cx="9.5" cy="15.5" r="0.8" fill="#ef4444" /><circle cx="14.5" cy="15.5" r="0.8" fill="#ef4444" /></svg>`
 };
@@ -381,11 +381,17 @@ function loadAll() {
   post({ type: "FETCH_TEAM_MEMBERS", payload: { projectId: state.projectId } });
 }
 
+let lastLoadSilentTime = 0;
 function loadAllSilent() {
   if (!state.projectId || !state.auth?.isAuthenticated || state.editing) return;
   
   // Smart polling: Do not spam the server if this VS Code window/tab is hidden in the background
   if (document.hidden) return;
+
+  // Debounce rapid calls (e.g., from tab switching focus events) to prevent 429 Rate Limit
+  const now = Date.now();
+  if (now - lastLoadSilentTime < 5000) return;
+  lastLoadSilentTime = now;
 
   // Silent polls do NOT change the epoch — they carry the current epoch.
   // This means if a silent poll response is stale it will still overwrite,

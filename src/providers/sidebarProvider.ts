@@ -270,7 +270,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const csp = [
       `default-src 'none'`,
       // LOW-01: Removed 'unsafe-inline' — all styles in external sidebar.css
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
+      `style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com`,
+      `font-src ${webview.cspSource} https://fonts.gstatic.com`,
       `script-src 'nonce-${nonce}'`,
       `img-src ${webview.cspSource} https: data:`,
     ].join("; ");
@@ -281,6 +282,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   <link href="${styleUri}" rel="stylesheet" />
   <title>Wekraft</title>
 </head>

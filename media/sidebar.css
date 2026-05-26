@@ -44,13 +44,15 @@
   --tag-grey-border: rgba(115,115,115,0.35);
 
   /* Theme Variables (Default Dark) */
-  --bg-main: #292929;
+  --bg-main: #121212;
   --bg-card: rgba(0, 0, 0, 0.2);
   --bg-card-solid: #1f1f1f;
-  --bg-hover-accent: rgba(20, 71, 230, 0.15); /* #1447e6 hover */
+  --bg-hover-accent: #132F6A;
   --bg-active-tab: #1447e6; /* #1447e6 active */
   --text-main: #f4f4f5;
   --text-muted: #d4d4d8;
+  --text-white-dynamic: #ffffff;
+  --icon-color: #686871;
   --border-color: rgba(255, 255, 255, 0.06);
   --border-color-hover: rgba(255, 255, 255, 0.1);
   --input-bg: rgba(255, 255, 255, 0.05);
@@ -62,15 +64,17 @@
   --bg-main: #ffffff;
   --bg-card: #ffffff;
   --bg-card-solid: #ffffff;
-  --bg-hover-accent: rgba(20, 71, 230, 0.15);
+  --bg-hover-accent: rgba(19, 47, 106, 0.08);
   --bg-active-tab: #1447e6;
   --text-main: #292929;
   --text-muted: #475569;
+  --text-white-dynamic: #292929;
+  --icon-color: #292929;
   --border-color: rgba(15, 23, 42, 0.1);
   --border-color-hover: rgba(15, 23, 42, 0.15);
   --input-bg: rgba(15, 23, 42, 0.04);
   --header-bg: linear-gradient(135deg, #ffffff 0%, #edf1fd 100%); /* white with gradient of #1447E6 */
-  --text-title: #000000;
+  --text-title: #292929;
 }
 
 html,
@@ -80,13 +84,17 @@ body {
 }
 
 body {
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
+  font-family: 'Roboto', sans-serif;
+  font-size: 13px;
   color: var(--text-main) !important;
   background: var(--bg-main) !important;
   padding: 0;
   margin: 0;
   line-height: 1.5;
+}
+
+svg {
+  color: var(--icon-color);
 }
 
 #app {
@@ -132,7 +140,7 @@ body {
   height: 52px;
   border-radius: 14px;
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #fff;
+  color: var(--text-white-dynamic);
   font-size: 24px;
   font-weight: 800;
   display: flex;
@@ -387,8 +395,12 @@ body {
 }
 
 .wk-select-option:hover {
-  background: rgba(255,255,255,0.1);
-  color: #fff;
+  background: #132F6A !important;
+  color: #ffffff !important;
+}
+
+.wk-select-option:hover * {
+  color: #ffffff !important;
 }
 
 .wk-select-option.selected {
@@ -414,7 +426,7 @@ body {
   height: 48px;
   border-radius: 25%;
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #fff;
+  color: var(--text-white-dynamic);
   font-size: 18px;
   font-weight: 700;
   display: flex;
@@ -460,27 +472,13 @@ body {
   width: fit-content;
 }
 
-.plan-owner {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(139, 92, 246, 0.2));
-  color: #f472b6;
-  border: 1px solid rgba(236, 72, 153, 0.3);
-}
-
-.plan-admin {
-  background: rgba(99, 102, 241, 0.2);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.3);
-}
-
-.plan-member {
-  background: var(--vscode-editor-inactiveSelectionBackground);
-  color: var(--vscode-descriptionForeground);
-}
-
+.plan-owner,
+.plan-admin,
+.plan-member,
 .plan-viewer {
-  background: var(--vscode-editor-inactiveSelectionBackground);
-  color: var(--vscode-descriptionForeground);
-  opacity: 0.8;
+  background: transparent;
+  color: #686871;
+  border: 1px solid rgba(104, 104, 113, 0.3);
 }
 
 /* ── Sections / labels ───────────────────────────────────── */
@@ -574,7 +572,7 @@ body {
 
 .tab.active {
   background: var(--bg-active-tab);
-  color: #ffffff;
+  color: var(--text-white-dynamic);
 }
 
 /* ── Project + Sprint selectors ─────────────────────────── */
@@ -597,9 +595,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px;
-  background: var(--bg-hover-accent);
-  border-radius: var(--wk-radius);
+  padding: 8px 0;
+  background: transparent;
   margin-top: 4px;
 }
 
@@ -631,8 +628,8 @@ body {
 }
 
 .team-avatar-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: #132F6A !important;
+  color: #ffffff !important;
 }
 
 /* ── Main tabs (Tasks | Issues) ─────────────────────────── */
@@ -666,7 +663,7 @@ body {
 
 .main-tab.active {
   background: var(--bg-active-tab);
-  color: #ffffff;
+  color: var(--text-white-dynamic);
 }
 
 /* ── Item list ───────────────────────────────────────────── */
@@ -694,8 +691,19 @@ body {
 }
 
 .item-card:hover {
-  background: var(--bg-hover-accent);
-  border-color: var(--border-color-hover);
+  background: #132F6A !important;
+  border-color: #132F6A !important;
+  color: #ffffff !important;
+}
+
+.item-card:hover .item-title,
+.item-card:hover .item-date,
+.item-card:hover .item-assignee,
+.item-card:hover .item-assignee-extra,
+.item-card:hover .deadline-text,
+.item-card:hover .deadline-label,
+.item-card:hover svg {
+  color: #ffffff !important;
 }
 
 .item-dot {
@@ -774,13 +782,19 @@ body {
   outline: none;
 }
 
+.item-status:hover {
+  background: #132F6A !important;
+  color: #ffffff !important;
+  border-color: #132F6A !important;
+}
+
 .status-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
   min-width: 140px;
-  background: #1f1f1f;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 4px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
@@ -796,20 +810,20 @@ body {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #e5e7eb;
+  color: var(--text-main);
   font-size: 11px;
   cursor: pointer;
   transition: background 0.1s ease, color 0.1s ease;
 }
 
 .status-menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: #132F6A;
+  color: #ffffff;
 }
 
 .status-menu-item.active {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: #132F6A;
+  color: #ffffff;
   font-weight: 600;
 }
 
@@ -820,7 +834,7 @@ body {
 }
 
 .item-date .item-pill-icon {
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   opacity: 1;
 }
 
@@ -860,63 +874,63 @@ body {
 /* Task statuses */
 .badge-not-started {
   background: #64748b;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(148,163,184,0.4);
 }
 
 .badge-inprogress {
   background: #f97316;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(249,115,22,0.4);
 }
 
 .badge-reviewing {
   background: #3b82f6;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(59,130,246,0.4);
 }
 
 .badge-testing {
   background: #8b5cf6;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(139,92,246,0.4);
 }
 
 .badge-completed {
   background: #10b981;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(16,185,129,0.4);
 }
 
 /* Issue statuses */
 .badge-not-opened {
   background: #6b7280;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(107,114,128,0.4);
 }
 
 .badge-opened {
   background: #3b82f6;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(59,130,246,0.4);
 }
 
 .badge-reopened {
   background: #a855f7;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(168,85,247,0.4);
 }
 
 .badge-closed {
   background: #10b981;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border-color: rgba(16,185,129,0.4);
 }
 
 /* Fallback for unknown statuses */
 .badge- {
   background: rgba(107,114,128,0.6);
-  color: #ffffff;
+  color: var(--text-white-dynamic);
 }
 
 .item-assignee {
@@ -1077,7 +1091,7 @@ body {
 
 .btn-primary {
   background: #3b82f6;
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   border: 1px solid rgba(255,255,255,0.1);
   box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
@@ -1123,7 +1137,7 @@ body {
 
 .btn-ghost:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  color: var(--text-white-dynamic);
 }
 
 .btn-sm {
@@ -1224,19 +1238,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
   border-radius: var(--wk-radius-sm);
   cursor: pointer;
   font-size: 12px;
   transition: var(--wk-transition);
   min-height: 32px;
-  color: #fff;
+  color: var(--text-main);
 }
 
 .assignee-selected-display:hover {
-  border-color: rgba(255, 255, 255, 0.7);
-  background: rgba(0, 0, 0, 0.3);
+  border-color: var(--border-color-hover);
+  background: var(--input-bg);
 }
 
 .assignee-dropdown {
@@ -1244,8 +1258,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: #212121;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border-color);
   border-radius: var(--wk-radius-sm);
   z-index: 100;
   overflow: hidden;
@@ -1262,12 +1276,16 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
   font-size: 12px;
   transition: background 0.1s;
-  color: #e4e4e7;
+  color: var(--text-main);
 }
 
 .assignee-option:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: #132F6A !important;
+  color: #ffffff !important;
+}
+
+.assignee-option:hover * {
+  color: #ffffff !important;
 }
 
 .assignee-selected-display .mini-avatar,
@@ -1276,7 +1294,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .assignee-option .mini-avatar-img,
 .item-assignees .mini-avatar,
 .item-assignees .mini-avatar-img {
-  border: 2px solid #ffffff;
+  border: 2px solid var(--bg-card-solid);
 }
 
 .assignee-option.disabled {
@@ -1371,7 +1389,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .color-dot.active {
   border-color: #1f1f1f;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
-  color: #ffffff;
+  color: var(--text-white-dynamic);
   transform: scale(1.1);
 }
 
@@ -1447,19 +1465,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* ── Light Theme Overrides for Edit Panel & Icons ──────────────────────── */
 
-[data-theme="light"] .edit-panel {
-  background: linear-gradient(135deg, #ffffff 0%, #edf1fd 100%);
-  border-color: rgba(15, 23, 42, 0.1);
-}
-
 [data-theme="light"] .edit-panel-label,
 [data-theme="light"] .ep-label {
-  color: #000000;
+  color: #292929;
 }
 
 [data-theme="light"] .ep-field input,
 [data-theme="light"] .ep-field textarea {
-  color: #000000;
+  color: #292929;
   background: rgba(15, 23, 42, 0.04);
   border-color: rgba(15, 23, 42, 0.1);
 }
@@ -1470,13 +1483,16 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 [data-theme="light"] .edit-panel .assignee-count,
 [data-theme="light"] .edit-panel .status-text,
 [data-theme="light"] .edit-panel .priority-text,
-[data-theme="light"] .edit-panel .btn-icon,
+[data-theme="light"] .edit-panel .btn-icon {
+  color: #292929;
+}
+
 [data-theme="light"] .edit-panel svg {
-  color: #000000;
+  color: var(--icon-color);
 }
 
 [data-theme="light"] .wk-select-display,
-[data-theme="light"] .assignees-dropdown {
+[data-theme="light"] .assignee-dropdown {
   background: rgba(15, 23, 42, 0.04);
   border-color: rgba(15, 23, 42, 0.1);
 }
@@ -1490,7 +1506,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 [data-theme="light"] .item-date .item-pill-icon {
-  color: #000000;
+  color: var(--icon-color);
 }
 
 [data-theme="light"] .btn-ghost {
@@ -1499,7 +1515,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 [data-theme="light"] .btn-ghost:hover {
   background: rgba(15, 23, 42, 0.08);
-  color: #000000;
+  color: #292929;
 }
 
 /* ── Project Deadline UI Section ─────────────────────────── */
@@ -1514,8 +1530,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .deadline-card:hover {
-  background: var(--bg-hover-accent);
-  border-color: var(--border-color-hover);
+  background: #132F6A !important;
+  border-color: #132F6A !important;
+}
+
+.deadline-card:hover .deadline-text,
+.deadline-card:hover .deadline-label,
+.deadline-card:hover svg {
+  color: #ffffff !important;
 }
 
 .deadline-content {
@@ -1560,16 +1582,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .deadline-text {
   font-size: 13px;
   font-weight: 700;
-  background: linear-gradient(135deg, #f472b6 0%, #d946ef 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-white-dynamic);
   transition: all var(--wk-transition);
 }
 
 .deadline-text.muted {
-  background: none;
-  -webkit-background-clip: initial;
-  -webkit-text-fill-color: initial;
   color: var(--vscode-descriptionForeground);
   font-weight: 500;
   opacity: 0.7;
@@ -1586,7 +1603,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   border: 1px solid var(--border-color);
   flex-shrink: 0;
   opacity: 0.8;
-  color: var(--vscode-descriptionForeground);
+  color: var(--text-white-dynamic);
 }
 
 [data-theme="light"] .deadline-card {
